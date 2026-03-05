@@ -23,6 +23,7 @@ class FeatureExtractorConfig:
     timestamp_utc: datetime = field(default_factory=lambda: _resolve_timestamp(os.getenv("FEATURES_TIMESTAMP_UTC")))
     write_to_db: bool = field(default_factory=lambda: os.getenv("FEATURES_WRITE_TO_DB", "true").lower() == "true")
     skip_nodata: bool = field(default_factory=lambda: os.getenv("FEATURES_SKIP_NODATA", "true").lower() == "true")
+    grid_prefix: str = field(default_factory=lambda: os.getenv("FEATURES_GRID_PREFIX", "cell"))
 
 
 class FeatureExtractor:
@@ -114,7 +115,7 @@ class FeatureExtractor:
                     row_idx,
                     col_idx,
                 )
-                grid_id = _grid_id(row_idx, col_idx)
+                grid_id = _grid_id(self.config.grid_prefix, row_idx, col_idx)
 
                 rows.append(
                     {
@@ -187,8 +188,8 @@ def _resolve_timestamp(raw: str | None) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
-def _grid_id(row_idx: int, col_idx: int) -> str:
-    return f"cell_{row_idx}_{col_idx}"
+def _grid_id(prefix: str, row_idx: int, col_idx: int) -> str:
+    return f"{prefix}_{row_idx}_{col_idx}"
 
 
 def _cell_geometry_bounds(transform, row_idx: int, col_idx: int) -> tuple[float, float, float, float, float, float]:
@@ -221,6 +222,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--write-to-db", choices=["true", "false"], help="Insert extracted rows into PostgreSQL")
     parser.add_argument("--timestamp", help="Capture timestamp (ISO format)")
     parser.add_argument("--source", help="Source name for forest_features rows")
+    parser.add_argument("--grid-prefix", help="Prefix for generated grid_id values")
     return parser
 
 
@@ -238,6 +240,8 @@ def _config_from_args(args: argparse.Namespace) -> FeatureExtractorConfig:
         config.timestamp_utc = _resolve_timestamp(args.timestamp)
     if args.source:
         config.source_name = args.source
+    if args.grid_prefix:
+        config.grid_prefix = args.grid_prefix
     return config
 
 

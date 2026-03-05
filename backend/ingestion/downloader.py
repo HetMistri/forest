@@ -20,9 +20,13 @@ class IngestionConfig:
         default_factory=lambda: _parse_bbox(os.getenv("INGESTION_REGION_BBOX", "73.55,20.05,74.25,21.10"))
     )
     region_geojson_path: str | None = field(default_factory=lambda: os.getenv("INGESTION_REGION_GEOJSON"))
+    region_polygon: list[list[float]] | None = None
     gee_project: str | None = field(default_factory=lambda: os.getenv("GEE_PROJECT"))
     gee_service_account: str | None = field(default_factory=lambda: os.getenv("GEE_SERVICE_ACCOUNT"))
     gee_private_key_file: str | None = field(default_factory=lambda: os.getenv("GEE_PRIVATE_KEY_FILE"))
+    interactive_auth: bool = field(
+        default_factory=lambda: os.getenv("INGESTION_INTERACTIVE_AUTH", "false").lower() == "true"
+    )
     bands: tuple[str, ...] = field(default_factory=lambda: _parse_bands(os.getenv("INGESTION_BANDS", "B4,B8,B11")))
     output_name: str = field(default_factory=lambda: os.getenv("INGESTION_OUTPUT_NAME", "sentinel2_composite.tif"))
     output_dir: Path = field(default_factory=lambda: _default_output_dir())
@@ -46,6 +50,13 @@ class IngestionConfig:
         if len(self.bands) == 0:
             raise ValueError("bands cannot be empty")
 
+        if self.region_polygon is not None:
+            if len(self.region_polygon) < 3:
+                raise ValueError("region_polygon must contain at least 3 points")
+            for point in self.region_polygon:
+                if len(point) != 2:
+                    raise ValueError("Each region polygon point must contain [lon, lat]")
+
 
 class Sentinel2Downloader:
     """Downloads Sentinel-2 composite imagery from Google Earth Engine."""
@@ -67,12 +78,22 @@ class Sentinel2Downloader:
 
         try:
             ee.Initialize(project=self.config.gee_project)
-        except Exception:
+        except Exception as exc:
+            if not self.config.interactive_auth:
+                raise RuntimeError(
+                    "Earth Engine initialization failed. Configure service-account credentials "
+                    "or set INGESTION_INTERACTIVE_AUTH=true for local interactive login."
+                ) from exc
+
             ee.Authenticate()
             ee.Initialize(project=self.config.gee_project)
 
     def build_region(self) -> Any:
         ee = _import_ee()
+
+        if self.config.region_polygon:
+            polygon = _ensure_closed_ring(self.config.region_polygon)
+            return ee.Geometry.Polygon([polygon])
 
         if self.config.region_geojson_path:
             geojson_path = Path(self.config.region_geojson_path)
@@ -133,6 +154,7 @@ class Sentinel2Downloader:
             "scale_meters": self.config.scale_meters,
             "bands": list(self.config.bands),
             "region_bbox": list(self.config.region_bbox),
+            "region_polygon": self.config.region_polygon,
             "output_file": str(output_path),
         }
         output_path.with_suffix(".metadata.json").write_text(
@@ -189,6 +211,13 @@ def _extract_geojson_geometry(payload: dict[str, Any]) -> dict[str, Any]:
     raise ValueError("Unsupported GeoJSON payload for region geometry")
 
 
+def _ensure_closed_ring(polygon: list[list[float]]) -> list[list[float]]:
+    closed = [point[:] for point in polygon]
+    if closed[0] != closed[-1]:
+        closed.append(closed[0][:])
+    return closed
+
+
 def _import_ee() -> Any:
     try:
         import ee  # type: ignore
@@ -214,6 +243,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--scale", type=int, help="Output resolution in meters")
     parser.add_argument("--bands", help="Comma-separated Sentinel-2 band names (e.g. B4,B8,B11)")
     parser.add_argument("--output", help="Output raster filename")
+    parser.add_argument("--interactive-auth", choices=["true", "false"], help="Enable interactive ee.Authenticate")
     return parser
 
 
@@ -236,6 +266,8 @@ def _config_from_args(args: argparse.Namespace) -> IngestionConfig:
         config.bands = _parse_bands(args.bands)
     if args.output:
         config.output_name = args.output
+    if args.interactive_auth:
+        config.interactive_auth = args.interactive_auth == "true"
 
     config.validate()
     return config

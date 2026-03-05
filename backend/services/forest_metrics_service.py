@@ -27,8 +27,10 @@ logger = logging.getLogger(__name__)
 class ForestMetricsService:
     def __init__(self) -> None:
         from services.ml_bridge import MLBridge
+        from services.region_pipeline_service import RegionPipelineService
 
         self.ml = MLBridge.get_instance()
+        self.region_pipeline = RegionPipelineService()
 
     # ── DB Helpers ───────────────────────────────────────────────────────
 
@@ -60,6 +62,11 @@ class ForestMetricsService:
     # ── /forest-metrics ──────────────────────────────────────────────────
 
     def get_forest_metrics(self, polygon: list[list[float]]) -> ForestMetricsResponse:
+        try:
+            self.region_pipeline.run_for_polygon(polygon)
+        except Exception as exc:
+            logger.warning("Region pipeline failed for polygon request: %s", exc)
+
         row = self._fetch_one(
             """
             SELECT *
