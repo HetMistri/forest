@@ -11,12 +11,31 @@ from processing.preprocess import PreprocessConfig, Sentinel2Preprocessor
 
 
 class RegionPipelineService:
+    _last_run_by_polygon: dict[str, datetime] = {}
+
     def __init__(self) -> None:
         self.enabled = os.getenv("REGION_PIPELINE_ENABLED", "true").lower() == "true"
+        self.min_interval_seconds = int(os.getenv("REGION_PIPELINE_MIN_INTERVAL_SEC", "300"))
 
     def run_for_polygon(self, polygon: list[list[float]]) -> dict[str, object]:
         if not self.enabled:
             return {"enabled": False, "skipped": True}
+
+        polygon_key = self._polygon_key(polygon)
+        now = datetime.now(timezone.utc)
+        last_run = self._last_run_by_polygon.get(polygon_key)
+        if last_run is not None:
+            elapsed = (now - last_run).total_seconds()
+            if elapsed < self.min_interval_seconds:
+                return {
+                    "enabled": True,
+                    "skipped": True,
+                    "reason": "recently_processed",
+                    "elapsed_seconds": round(elapsed, 3),
+                    "min_interval_seconds": self.min_interval_seconds,
+                }
+
+        self._last_run_by_polygon[polygon_key] = now
 
         run_id = self._build_run_id(polygon)
         source_filename = f"sentinel2_{run_id}.tif"
@@ -61,7 +80,11 @@ class RegionPipelineService:
         }
 
     def _build_run_id(self, polygon: list[list[float]]) -> str:
-        canonical = json.dumps(polygon, separators=(",", ":"), sort_keys=False)
+        canonical = self._polygon_key(polygon)
         digest = hashlib.sha1(canonical.encode("utf-8")).hexdigest()[:10]
         ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
         return f"reg_{ts}_{digest}"
+
+    def _polygon_key(self, polygon: list[list[float]]) -> str:
+        rounded = [[round(point[0], 6), round(point[1], 6)] for point in polygon]
+        return json.dumps(rounded, separators=(",", ":"), sort_keys=False)
