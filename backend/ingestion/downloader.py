@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import calendar
 import json
 import os
 from dataclasses import dataclass, field
@@ -12,8 +13,8 @@ from urllib.request import urlopen
 
 @dataclass(slots=True)
 class IngestionConfig:
-    start_date: str = field(default_factory=lambda: os.getenv("INGESTION_START_DATE", "2024-01-01"))
-    end_date: str = field(default_factory=lambda: os.getenv("INGESTION_END_DATE", date.today().isoformat()))
+    start_date: str = field(default_factory=lambda: _default_start_date())
+    end_date: str = field(default_factory=lambda: _default_end_date())
     max_cloud_pct: float = field(default_factory=lambda: float(os.getenv("INGESTION_MAX_CLOUD_PCT", "20")))
     scale_meters: int = field(default_factory=lambda: int(os.getenv("INGESTION_SCALE_METERS", "10")))
     region_bbox: tuple[float, float, float, float] = field(
@@ -170,6 +171,35 @@ def _default_output_dir() -> Path:
 
     repo_root = Path(__file__).resolve().parents[2]
     return repo_root / "data" / "raw"
+
+
+def _default_end_date() -> str:
+    raw = os.getenv("INGESTION_END_DATE", "").strip()
+    if raw:
+        return raw
+    return date.today().isoformat()
+
+
+def _default_start_date() -> str:
+    raw = os.getenv("INGESTION_START_DATE", "").strip()
+    if raw:
+        return raw
+
+    lookback_months = int(os.getenv("INGESTION_LOOKBACK_MONTHS", "6"))
+    today = date.today()
+    return _subtract_months(today, lookback_months).isoformat()
+
+
+def _subtract_months(input_date: date, months: int) -> date:
+    if months <= 0:
+        return input_date
+
+    month_index = input_date.month - months
+    target_year = input_date.year + ((month_index - 1) // 12)
+    target_month = ((month_index - 1) % 12) + 1
+    last_day = calendar.monthrange(target_year, target_month)[1]
+    target_day = min(input_date.day, last_day)
+    return date(target_year, target_month, target_day)
 
 
 def _parse_bbox(raw: str) -> tuple[float, float, float, float]:

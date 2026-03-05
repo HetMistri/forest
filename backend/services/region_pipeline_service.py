@@ -3,7 +3,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from datetime import datetime, timezone
+import calendar
+from datetime import date, datetime, timezone
 
 from features.extractor import FeatureExtractor, FeatureExtractorConfig
 from ingestion.downloader import IngestionConfig, Sentinel2Downloader
@@ -37,6 +38,9 @@ class RegionPipelineService:
 
         self._last_run_by_polygon[polygon_key] = now
 
+        end_date = now.date().isoformat()
+        start_date = self._subtract_months(now.date(), int(os.getenv("INGESTION_LOOKBACK_MONTHS", "6"))).isoformat()
+
         run_id = self._build_run_id(polygon)
         source_filename = f"sentinel2_{run_id}.tif"
         ndvi_filename = f"ndvi_{run_id}.tif"
@@ -45,6 +49,8 @@ class RegionPipelineService:
 
         ingestion = Sentinel2Downloader(
             IngestionConfig(
+                start_date=start_date,
+                end_date=end_date,
                 region_polygon=polygon,
                 output_name=source_filename,
             )
@@ -74,6 +80,8 @@ class RegionPipelineService:
         return {
             "enabled": True,
             "run_id": run_id,
+            "start_date": start_date,
+            "end_date": end_date,
             "ingestion_output": str(ingestion),
             "processing": processing,
             "extraction": extraction,
@@ -88,3 +96,14 @@ class RegionPipelineService:
     def _polygon_key(self, polygon: list[list[float]]) -> str:
         rounded = [[round(point[0], 6), round(point[1], 6)] for point in polygon]
         return json.dumps(rounded, separators=(",", ":"), sort_keys=False)
+
+    def _subtract_months(self, input_date: date, months: int) -> date:
+        if months <= 0:
+            return input_date
+
+        month_index = input_date.month - months
+        target_year = input_date.year + ((month_index - 1) // 12)
+        target_month = ((month_index - 1) % 12) + 1
+        last_day = calendar.monthrange(target_year, target_month)[1]
+        target_day = min(input_date.day, last_day)
+        return date(target_year, target_month, target_day)
