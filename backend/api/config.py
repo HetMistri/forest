@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     database_url: str | None = None
     demo_cache_enabled: bool = True
+    ml_model_path: str = "services/ml/density_model.pkl"
 
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]

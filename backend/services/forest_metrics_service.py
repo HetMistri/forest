@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from sqlalchemy import text
@@ -20,9 +21,17 @@ from api.schemas import (
     SystemStatusResponse,
     TreeDensityResponse,
 )
+logger = logging.getLogger(__name__)
 
 
 class ForestMetricsService:
+    def __init__(self) -> None:
+        from services.ml_bridge import MLBridge
+
+        self.ml = MLBridge.get_instance()
+
+    # ── DB Helpers ───────────────────────────────────────────────────────
+
     def _fetch_one(self, query: str, params: dict[str, Any] | None = None) -> dict[str, Any] | None:
         engine = get_engine()
         if engine is None:
@@ -48,6 +57,8 @@ class ForestMetricsService:
     def _area_km2(self, polygon: list[list[float]]) -> float:
         return round(max(len(polygon) - 2, 1) * 0.85, 2)
 
+    # ── /forest-metrics ──────────────────────────────────────────────────
+
     def get_forest_metrics(self, polygon: list[list[float]]) -> ForestMetricsResponse:
         row = self._fetch_one(
             """
@@ -56,7 +67,7 @@ class ForestMetricsService:
             """,
             {"polygon": json.dumps(polygon)},
         )
-        if row:
+        if row and row.get("tree_density") and row.get("tree_density") > 0:
             species_distribution = row.get("species_distribution") or {}
             if not isinstance(species_distribution, dict):
                 species_distribution = {}
@@ -71,17 +82,24 @@ class ForestMetricsService:
                 },
             )
 
+        # ── ML fallback ──────────────────────────────────────────────────
         area_km2 = self._area_km2(polygon)
-        tree_density = 162.0
-        tree_count = int(area_km2 * tree_density * 100)
+        tree_density = self.ml.predict_density()
+        tree_count = self.ml.calculate_total_trees(tree_density, area_km2)
+        health_score = float(self.ml.compute_health())
+        risk_raw = self.ml.detect_risk()
+        risk_level = self.ml.classify_risk_level(risk_raw)
+
         return ForestMetricsResponse(
             area_km2=area_km2,
             tree_count=tree_count,
             tree_density=tree_density,
-            health_score=68.0,
-            risk_level="Moderate",
+            health_score=health_score,
+            risk_level=risk_level,
             species_distribution={"teak": 58.0, "bamboo": 27.0, "mixed": 15.0},
         )
+
+    # ── /tree-density ────────────────────────────────────────────────────
 
     def get_tree_density(self, polygon: list[list[float]]) -> TreeDensityResponse:
         row = self._fetch_one(
@@ -91,16 +109,19 @@ class ForestMetricsService:
             """,
             {"polygon": json.dumps(polygon)},
         )
-        if row:
+        if row and row.get("tree_density") and row.get("tree_density") > 0:
             return TreeDensityResponse(
                 tree_density=float(row.get("tree_density") or 0),
                 total_trees=int(round(float(row.get("total_trees") or 0))),
             )
 
+        # ── ML fallback ──────────────────────────────────────────────────
         area_km2 = self._area_km2(polygon)
-        tree_density = 162.0
-        total_trees = int(area_km2 * tree_density * 100)
+        tree_density = self.ml.predict_density()
+        total_trees = self.ml.calculate_total_trees(tree_density, area_km2)
         return TreeDensityResponse(tree_density=tree_density, total_trees=total_trees)
+
+    # ── /health-score ────────────────────────────────────────────────────
 
     def get_health_score(self, polygon: list[list[float]]) -> HealthScoreResponse:
         row = self._fetch_one(
@@ -110,14 +131,22 @@ class ForestMetricsService:
             """,
             {"polygon": json.dumps(polygon)},
         )
-        if row:
+        if row and row.get("health_score") and row.get("health_score") > 0:
             return HealthScoreResponse(
                 health_score=float(row.get("health_score") or 0),
                 ndvi_avg=float(row.get("ndvi_avg") or 0),
                 ndmi_avg=float(row.get("ndmi_avg") or 0),
             )
 
-        return HealthScoreResponse(health_score=68.0, ndvi_avg=0.72, ndmi_avg=0.41)
+        # ── ML fallback ──────────────────────────────────────────────────
+        ndvi_avg = 0.72
+        ndmi_avg = 0.41
+        health = self.ml.compute_health(ndvi_avg, ndmi_avg)
+        return HealthScoreResponse(
+            health_score=float(health), ndvi_avg=ndvi_avg, ndmi_avg=ndmi_avg
+        )
+
+    # ── /risk-alerts ─────────────────────────────────────────────────────
 
     def get_risk_alerts(self, polygon: list[list[float]]) -> RiskAlertsResponse:
         row = self._fetch_one(
@@ -126,7 +155,7 @@ class ForestMetricsService:
             """,
             {"polygon": json.dumps(polygon)},
         )
-        if row and isinstance(row.get("payload"), dict):
+        if row and isinstance(row.get("payload"), dict) and row["payload"].get("alerts"):
             payload = row["payload"]
             alerts_payload = payload.get("alerts") or []
             alerts = [
@@ -142,16 +171,23 @@ class ForestMetricsService:
                 alerts=alerts,
             )
 
+        # ── ML fallback ──────────────────────────────────────────────────
+        risk_raw = self.ml.detect_risk()
+        risk_level = self.ml.classify_risk_level(risk_raw)
+        severity = risk_level  # same mapping
+
         return RiskAlertsResponse(
-            risk_level="Moderate",
+            risk_level=risk_level,
             alerts=[
                 RiskAlert(
                     type="NDVI_DROP",
-                    severity="High",
+                    severity=severity,
                     location=[20.35, 73.92],
                 )
             ],
         )
+
+    # ── /species-composition ─────────────────────────────────────────────
 
     def get_species_composition(self, polygon: list[list[float]]) -> SpeciesCompositionResponse:
         row = self._fetch_one(
@@ -170,6 +206,8 @@ class ForestMetricsService:
 
         return SpeciesCompositionResponse(teak=58.0, bamboo=27.0, mixed_deciduous=15.0)
 
+    # ── /health-forecast ─────────────────────────────────────────────────
+
     def get_health_forecast(self, polygon: list[list[float]]) -> HealthForecastResponse:
         row = self._fetch_one(
             """
@@ -177,7 +215,7 @@ class ForestMetricsService:
             """,
             {"polygon": json.dumps(polygon)},
         )
-        if row and isinstance(row.get("forecast"), list):
+        if row and isinstance(row.get("forecast"), list) and len(row.get("forecast")) > 0:
             forecast = [
                 ForecastPoint(
                     month=str(item.get("month", "")),
@@ -187,16 +225,20 @@ class ForestMetricsService:
             ]
             return HealthForecastResponse(forecast=forecast)
 
-        return HealthForecastResponse(
-            forecast=[
-                ForecastPoint(month="2025-01", health_score=66),
-                ForecastPoint(month="2025-02", health_score=65),
-                ForecastPoint(month="2025-03", health_score=64),
-            ]
-        )
+        # ── ML fallback ──────────────────────────────────────────────────
+        points_raw = self.ml.forecast_as_monthly_points()
+        forecast = [
+            ForecastPoint(month=p["month"], health_score=p["health_score"])
+            for p in points_raw
+        ]
+        return HealthForecastResponse(forecast=forecast)
+
+    # ── /ndvi-map ────────────────────────────────────────────────────────
 
     def get_ndvi_map(self) -> NDVIMapResponse:
         return NDVIMapResponse(tile_url="/ndvi-map")
+
+    # ── /risk-zones ──────────────────────────────────────────────────────
 
     def get_risk_zones(self) -> RiskZonesResponse:
         rows = self._fetch_all(
@@ -218,6 +260,8 @@ class ForestMetricsService:
             )
         return RiskZonesResponse(zones=[])
 
+    # ── /system-status ───────────────────────────────────────────────────
+
     def get_system_status(self) -> SystemStatusResponse:
         row = self._fetch_one("SELECT get_system_status() AS payload")
         if row and isinstance(row.get("payload"), dict):
@@ -228,11 +272,15 @@ class ForestMetricsService:
                 model_status=str(payload.get("model_status", "unknown")),
             )
 
+        # ── ML fallback ──────────────────────────────────────────────────
+        ml_status = self.ml.get_status()
         return SystemStatusResponse(
             satellite_data_loaded=True,
             feature_dataset_rows=45231,
-            model_status="ready",
+            model_status="ml_ready" if ml_status["model_loaded"] else "ml_not_loaded",
         )
+
+    # ── /demo-metrics ────────────────────────────────────────────────────
 
     def get_demo_metrics(self) -> DemoMetricsResponse:
         row = self._fetch_one(
@@ -249,4 +297,16 @@ class ForestMetricsService:
                 risk=str(payload.get("risk", "Low")),
             )
 
-        return DemoMetricsResponse(tree_count=84200, health_score=68.0, risk="Moderate")
+        # ── ML fallback (demo polygon: 5.1 km²) ─────────────────────────
+        demo_area_km2 = 5.1
+        density = self.ml.predict_density()
+        tree_count = self.ml.calculate_total_trees(density, demo_area_km2)
+        health = self.ml.compute_health()
+        risk_raw = self.ml.detect_risk()
+        risk_level = self.ml.classify_risk_level(risk_raw)
+
+        return DemoMetricsResponse(
+            tree_count=tree_count,
+            health_score=float(health),
+            risk=risk_level,
+        )
