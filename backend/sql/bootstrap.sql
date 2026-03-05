@@ -258,16 +258,16 @@ BEGIN
     ),
     agg AS (
         SELECT
-            COALESCE(SUM((tree_density * ST_Area(geometry::GEOGRAPHY) / 10000.0)), 0) AS tree_count_v,
-            COALESCE(AVG(tree_density), 0) AS tree_density_v,
-            COALESCE(AVG(health_score), 0) AS health_score_v,
-            COALESCE(AVG(forecast_health), 0) AS forecast_health_v,
+            COALESCE(SUM((im.tree_density * ST_Area(im.geometry::GEOGRAPHY) / 10000.0)), 0) AS tree_count_v,
+            COALESCE(AVG(im.tree_density), 0) AS tree_density_v,
+            COALESCE(AVG(im.health_score), 0) AS health_score_v,
+            COALESCE(AVG(im.forecast_health), 0) AS forecast_health_v,
             CASE
-                WHEN SUM(CASE WHEN risk_level = 'High' THEN 1 ELSE 0 END) > 0 THEN 'High'
-                WHEN SUM(CASE WHEN risk_level = 'Moderate' THEN 1 ELSE 0 END) > 0 THEN 'Moderate'
+                WHEN SUM(CASE WHEN im.risk_level = 'High' THEN 1 ELSE 0 END) > 0 THEN 'High'
+                WHEN SUM(CASE WHEN im.risk_level = 'Moderate' THEN 1 ELSE 0 END) > 0 THEN 'Moderate'
                 ELSE 'Low'
             END AS risk_level_v
-        FROM inside_metrics
+        FROM inside_metrics im
     ),
     species AS (
         SELECT jsonb_build_object(

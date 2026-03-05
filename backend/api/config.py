@@ -14,8 +14,12 @@ class Settings(BaseSettings):
     app_env: str = "development"
     app_host: str = "0.0.0.0"
     app_port: int = 8000
+    cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     database_url: str | None = None
     demo_cache_enabled: bool = True
+
+    def cors_origins_list(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
 
 @lru_cache
