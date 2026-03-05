@@ -1,22 +1,29 @@
+from __future__ import annotations
+
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
-from .schemas import ForestMetricsRequest, ForestMetricsResponse
+from .config import get_settings
+from .db import check_db_connection
+from .routers import api_router
 
-app = FastAPI(title="Forest Analytics API")
+logger = logging.getLogger(__name__)
+settings = get_settings()
 
 
-@app.post("/forest-metrics", response_model=ForestMetricsResponse)
-def post_forest_metrics(payload: ForestMetricsRequest) -> ForestMetricsResponse:
-    polygon_size = len(payload.polygon)
-    area_km2 = round(max(polygon_size - 2, 1) * 0.85, 2)
-    tree_density = 162.0
-    tree_count = int(area_km2 * tree_density * 100)
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    if settings.database_url:
+        if check_db_connection():
+            logger.info("Database connection established")
+        else:
+            logger.warning("Database configured but connection check failed")
+    else:
+        logger.warning("DATABASE_URL not set. API will run without DB access.")
+    yield
 
-    return ForestMetricsResponse(
-        area_km2=area_km2,
-        tree_count=tree_count,
-        tree_density=tree_density,
-        health_score=68.0,
-        risk_level="Moderate",
-        species_distribution={"teak": 58.0, "bamboo": 27.0, "mixed": 15.0},
-    )
+
+app = FastAPI(title=settings.app_name, lifespan=lifespan)
+app.include_router(api_router)
