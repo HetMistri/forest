@@ -24,6 +24,11 @@ uv.lock
 .env.*
 !.env.example
 
+# Credential files (never commit)
+backend/*-ee-*.json
+backend/*service-account*.json
+backend/*credentials*.json
+
 # Build / distribution
 build/
 dist/
