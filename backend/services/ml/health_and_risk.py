@@ -1,7 +1,7 @@
 def calculate_health_score(ndvi: float, ndmi: float) -> int:
     """
     Calculates a weighted index for forest health.
-    Score = (NDVI * 0.7) + (NDMI * 0.3)
+    Score = (NDVI * 0.6) + (NDMI * 0.4)
     Output is normalized to a 0-100 scale.
     """
     # Assuming standard NDVI/NDMI valid range is -1 to 1, but for terrestrial forests it's 0 to 1
@@ -9,7 +9,7 @@ def calculate_health_score(ndvi: float, ndmi: float) -> int:
     ndvi_scaled = max(0, min(1, ndvi)) * 100
     ndmi_scaled = max(0, min(1, ndmi)) * 100
     
-    score = (ndvi_scaled * 0.7) + (ndmi_scaled * 0.3)
+    score = (ndvi_scaled * 0.6) + (ndmi_scaled * 0.4)
     return int(round(score))
 
 def detect_deforestation_risk(historical_ndvi_list: list) -> str:
