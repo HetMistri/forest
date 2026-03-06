@@ -33,8 +33,13 @@ class ForestMetricsService:
         self.ml = MLBridge.get_instance()
         self.region_pipeline = RegionPipelineService()
         self.demo_cache_enabled = os.getenv("DEMO_CACHE_ENABLED", "true").lower() == "true"
+        self.trigger_pipeline_on_request = (
+            os.getenv("REGION_PIPELINE_TRIGGER_ON_REQUEST", "false").lower() == "true"
+        )
 
     def _prepare_region_data(self, polygon: list[list[float]]) -> None:
+        if not self.trigger_pipeline_on_request:
+            return
         try:
             self.region_pipeline.run_for_polygon(polygon)
         except Exception as exc:

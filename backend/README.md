@@ -97,3 +97,26 @@ Notes:
 docker compose down -v
 docker compose up --build
 ```
+
+## 7) Backend smoke pipeline (download -> processing -> DB)
+
+Use local Docker PostGIS (fast, no remote DB latency):
+
+```bash
+cd ..
+docker compose up -d db
+```
+
+Then run from `backend/`:
+
+```bash
+DATABASE_URL=postgresql+psycopg://forest:forest@127.0.0.1:5433/forest_local \
+uv run python scripts/run_smoke_pipeline.py
+```
+
+This executes:
+
+- Sentinel-2 download from Earth Engine (small smoke bbox)
+- NDVI/NDMI/EVI preprocessing
+- Feature extraction and insert into `forest_features`
+- Row-count verification for smoke source

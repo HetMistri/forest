@@ -4,7 +4,7 @@ import argparse
 import json
 import os
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
@@ -103,7 +103,7 @@ class Sentinel2Preprocessor:
             "swir_band_index": self.config.swir_band_index,
             "clip_min": self.config.clip_min,
             "clip_max": self.config.clip_max,
-            "generated_at_utc": datetime.utcnow().isoformat() + "Z",
+            "generated_at_utc": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         }
         metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
 
@@ -175,7 +175,7 @@ class Sentinel1Preprocessor:
             "vv_vh_ratio_raster": str(ratio_path),
             "vv_band_index": self.config.vv_band_index,
             "vh_band_index": self.config.vh_band_index,
-            "generated_at_utc": datetime.utcnow().isoformat() + "Z",
+            "generated_at_utc": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         }
         metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
 
