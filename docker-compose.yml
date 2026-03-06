@@ -27,17 +27,27 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    env_file:
+      - ./backend/.env
     environment:
       APP_NAME: Forest_Analytics_API
       APP_ENV: production
       APP_HOST: 0.0.0.0
       APP_PORT: 8000
+      LOG_LEVEL: INFO
       DATABASE_URL: postgresql+psycopg://forest:forest@db:5432/forest_local
-      DEMO_CACHE_ENABLED: "true"
-      REGION_PIPELINE_ENABLED: "false"
+      STRICT_PROD_MODE: "true"
+      DEMO_CACHE_ENABLED: "false"
+      REGION_PIPELINE_ENABLED: "true"
+      REGION_PIPELINE_TRIGGER_ON_REQUEST: "true"
+      REGION_PIPELINE_MIN_INTERVAL_SEC: "30"
+      INGESTION_INTERACTIVE_AUTH: "false"
+      INGESTION_LOOKBACK_MONTHS: "6"
       CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
     ports:
       - "8000:8000"
+    volumes:
+      - /home/het-mistri/Projects/personal/forest-secret:/home/het-mistri/Projects/personal/forest-secret:ro
     command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 volumes:

@@ -364,7 +364,7 @@ BEGIN
         WHERE ST_Intersects(fm.geometry, poly)
     )
     SELECT
-        COALESCE((SELECT AVG(health_score) FROM m), 0),
+        COALESCE((SELECT AVG(m.health_score) FROM m), 0),
         COALESCE((SELECT AVG(ndvi) FROM f), 0),
         COALESCE((SELECT AVG(ndmi) FROM f), 0);
 END;

@@ -16,6 +16,28 @@ import amnexLogo from "../../assets/image.png";
 
 const PURPLE = "#401c86";
 const NAVY = "#020f50";
+const ANALYSIS_RETRY_INTERVAL_MS = 3000;
+const ANALYSIS_RETRY_WINDOW_MS = 90000;
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+function isRetryableAnalysisError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const message = error.message.toLowerCase();
+  return (
+    message.includes("503") ||
+    message.includes("service unavailable") ||
+    message.includes("no real") ||
+    message.includes("pipeline") ||
+    message.includes("features")
+  );
+}
 
 export interface DashboardState {
   metrics: ForestMetricsResponse | null;
@@ -47,23 +69,43 @@ export default function ForestDashboard() {
   const handlePolygon = useCallback(async (coords: [number, number][]) => {
     setState((s) => ({ ...s, loading: true, error: null, polygon: coords }));
     try {
-      const [m, f, r, hs, td, sp, sys] = await Promise.all([
-        forestApi.getForestMetrics(coords).catch(() => null),
-        forestApi.getHealthForecast(coords).catch(() => null),
-        forestApi.getRiskAlerts(coords).catch(() => null),
-        forestApi.getHealthScore(coords).catch(() => null),
-        forestApi.getTreeDensity(coords).catch(() => null),
-        forestApi.getSpeciesComposition(coords).catch(() => null),
-        forestApi.getSystemStatus().catch(() => null),
-      ]);
+      const startedAt = Date.now();
+      let lastRetryableError: unknown = null;
+      let metrics: ForestMetricsResponse | null = null;
+      while (Date.now() - startedAt < ANALYSIS_RETRY_WINDOW_MS) {
+        try {
+          metrics = await forestApi.getForestMetrics(coords);
+          break;
+        } catch (error) {
+          if (!isRetryableAnalysisError(error)) {
+            throw error;
+          }
+          lastRetryableError = error;
+          await wait(ANALYSIS_RETRY_INTERVAL_MS);
+        }
+      }
 
-      const errorMsg = !m
-        ? "Backend unavailable — unable to load analytics."
-        : null;
+      if (!metrics) {
+        throw (
+          lastRetryableError ??
+          new Error(
+            "Analysis timed out while waiting for backend pipeline. Please retry in a few moments.",
+          )
+        );
+      }
+
+      const [f, r, hs, td, sp, sys] = await Promise.all([
+        forestApi.getHealthForecast(coords),
+        forestApi.getRiskAlerts(coords),
+        forestApi.getHealthScore(coords),
+        forestApi.getTreeDensity(coords),
+        forestApi.getSpeciesComposition(coords),
+        forestApi.getSystemStatus(),
+      ]);
 
       setState((s) => ({
         ...s,
-        metrics: m,
+        metrics,
         forecast: f,
         riskData: r,
         healthScore: hs,
@@ -71,13 +113,17 @@ export default function ForestDashboard() {
         species: sp,
         systemStatus: sys,
         loading: false,
-        error: errorMsg,
+        error: null,
       }));
-    } catch {
+    } catch (error) {
+      const msg =
+        error instanceof Error
+          ? error.message
+          : "Analysis failed. Backend may be offline.";
       setState((s) => ({
         ...s,
         loading: false,
-        error: "Analysis failed. Backend may be offline.",
+        error: msg,
       }));
     }
   }, []);
