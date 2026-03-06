@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en-US" class="no-js">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
+  <title>AMNEX – Intelligence is Natural</title>
+
+  <!-- Preconnect hints for CDN assets -->
+  <link rel="dns-prefetch" href="/stats.wp.com/" />
+  <link rel="dns-prefetch" href="/fonts.googleapis.com/" />
+  <link rel="preconnect" href="/c0.wp.com/" />
+
+  <!-- WordPress core CSS -->
+  <link rel="stylesheet" href="/c0.wp.com/c/6.8.3/wp-includes/css/dist/block-library/style.min.css" />
+
+  <!-- Salient / AMNEX theme CSS -->
+  <link rel="stylesheet" href="/wp-content/plugins/hostinger-reach/frontend/dist/blocks/subscriptionc807.css" />
+  <link rel="stylesheet" href="/wp-content/themes/salient/css/font-awesome-legacy.min6996.css" />
+  <link rel="stylesheet" href="/wp-content/themes/salient/css/build/grid-systemc0f4.css" />
+  <link rel="stylesheet" href="/wp-content/themes/salient/css/build/stylec0f4.css" />
+  <link rel="stylesheet" href="/wp-content/themes/salient/css/build/header/header-layout-centered-menuc0f4.css" />
+  <link rel="stylesheet" href="/wp-content/themes/salient/css/build/elements/element-image-with-hotspotsc0f4.css" />
+  <link rel="stylesheet" href="/wp-content/themes/salient/css/build/elements/element-fancy-boxc0f4.css" />
+  <link rel="stylesheet" href="/wp-content/themes/salient/css/build/elements/element-post-gridc0f4.css" />
+  <link rel="stylesheet" href="/wp-content/themes/salient/css/build/elements/element-milestonec0f4.css" />
+  <link rel="stylesheet" href="/wp-content/themes/salient/css/build/elements/element-wpb-column-borderc0f4.css" />
+  <link rel="stylesheet" href="/fonts.googleapis.com/cssb681.css" />
+  <link rel="stylesheet" href="/wp-content/themes/salient/css/build/responsivec0f4.css" />
+  <link rel="stylesheet" href="/wp-content/themes/salient/css/build/plugins/flickityc0f4.css" />
+  <link rel="stylesheet" href="/wp-content/themes/salient/css/build/skin-materialc0f4.css" />
+  <link rel="stylesheet" href="/wp-content/plugins/ajax-search-lite/css/style.basic9ca4.css" />
+  <link rel="stylesheet" href="/wp-content/plugins/ajax-search-lite/css/style-curvy-black9ca4.css" />
+  <link rel="stylesheet" href="/wp-content/plugins/js_composer_salient/assets/css/js_composer.mind03b.css" />
+
+  <!-- Deferred / non-critical WP CSS (loaded immediately for SPA correctness) -->
+  <link rel="stylesheet" href="/wp-content/themes/salient/css/build/style-non-criticalc0f4.css" />
+  <link rel="stylesheet" href="/wp-content/themes/salient/css/build/plugins/jquery.fancybox3d36.css" />
+  <link rel="stylesheet" href="/wp-content/themes/salient/css/build/off-canvas/corec0f4.css" />
+  <link rel="stylesheet" href="/wp-content/themes/salient/css/build/off-canvas/simple-dropdownc0f4.css" />
+
+  <!-- WP mediaelement CSS -->
+  <link rel="stylesheet" href="/c0.wp.com/c/6.8.3/wp-includes/js/mediaelement/mediaelementplayer-legacy.min.css" />
+  <link rel="stylesheet" href="/c0.wp.com/c/6.8.3/wp-includes/js/mediaelement/wp-mediaelement.min.css" />
+</head>
+
+<body>
+  <!-- React SPA root – body class/data-attrs are set dynamically per page -->
+  <div id="root"></div>
+
+  <!-- jQuery (WordPress bundled version from CDN cache) -->
+  <script src="/c0.wp.com/c/6.8.3/wp-includes/js/jquery/jquery.min.js"></script>
+  <script src="/c0.wp.com/c/6.8.3/wp-includes/js/jquery/jquery-migrate.min.js"></script>
+
+  <!-- Salient third-party dependencies (load order matters) -->
+  <script src="/wp-content/themes/salient/js/build/third-party/jquery.easing.min4e44.js"></script>
+  <script src="/wp-content/themes/salient/js/build/third-party/jquery.mousewheel.mina9d5.js"></script>
+  <script src="/wp-content/themes/salient/js/build/third-party/transit.mine2dc.js"></script>
+  <script src="/wp-content/themes/salient/js/build/third-party/waypoints05da.js"></script>
+  <script src="/wp-content/themes/salient/js/build/third-party/hoverintent.min3aa8.js"></script>
+  <script src="/wp-content/themes/salient/js/build/third-party/jquery.fancybox7558.js"></script>
+  <script src="/wp-content/themes/salient/js/build/third-party/anime.min8686.js"></script>
+  <script src="/wp-content/themes/salient/js/build/third-party/flickity254d.js"></script>
+  <script src="/wp-content/themes/salient/js/build/third-party/vivus.min37ad.js"></script>
+  <script src="/wp-content/themes/salient/js/build/third-party/superfish0322.js"></script>
+
+  <!-- Salient priority (sets up global flags before DOM ready) -->
+  <script src="/wp-content/themes/salient/js/build/priorityc0f4.js"></script>
+
+  <!-- imagesLoaded & touchSwipe plugins -->
+  <script src="/wp-content/plugins/salient-portfolio/js/third-party/imagesLoaded.mineda1.js"></script>
+  <script src="/wp-content/plugins/salient-core/js/third-party/touchswipe.min5152.js"></script>
+
+  <!-- Default nectarOptions (overridden per-page by the WP page inline script) -->
+  <script>
+    window.nectarLove = {
+      ajaxurl: "https://amnex.com/wp-admin/admin-ajax.php",
+      postID: "7",
+      rooturl: "https://amnex.com",
+      disqusComments: "false",
+      loveNonce: "",
+      mapApiKey: ""
+    };
+    window.nectarOptions = {
+      delay_js: "false",
+      smooth_scroll: "false",
+      smooth_scroll_strength: "50",
+      quick_search: "false",
+      react_compat: "disabled",
+      header_entrance: "false",
+      body_border_func: "default",
+      body_border_mobile: "0",
+      dropdown_hover_intent: "default",
+      simplify_ocm_mobile: "0",
+      mobile_header_format: "default",
+      ocm_btn_position: "default",
+      left_header_dropdown_func: "default",
+      ajax_add_to_cart: "0",
+      ocm_remove_ext_menu_items: "remove_images",
+      woo_product_filter_toggle: "0",
+      woo_sidebar_toggles: "true",
+      woo_sticky_sidebar: "0",
+      woo_minimal_product_hover: "default",
+      woo_minimal_product_effect: "default",
+      woo_related_upsell_carousel: "false",
+      woo_product_variable_select: "default",
+      woo_using_cart_addons: "false",
+      view_transitions_effect: ""
+    };
+    window.nectar_front_i18n = {
+      menu: "Menu",
+      next: "Next",
+      previous: "Previous",
+      close: "Close"
+    };
+  </script>
+
+  <!-- Salient main init (runs on jQuery document.ready) -->
+  <script src="/wp-content/themes/salient/js/build/initc0f4.js"></script>
+
+  <!-- WPBakery Visual Composer front-end -->
+  <script src="/wp-content/plugins/js_composer_salient/assets/js/dist/js_composer_front.mind03b.js"></script>
+
+  <!-- Vite React entry point -->
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+
+</html>
