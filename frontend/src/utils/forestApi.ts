@@ -1,4 +1,6 @@
 const BASE = (import.meta.env.VITE_API_BASE_URL || "/api").replace(/\/$/, "");
+const API_DEBUG =
+  import.meta.env.DEV || import.meta.env.VITE_API_DEBUG === "true";
 
 export interface PolygonRequest {
   polygon: [number, number][];
@@ -55,26 +57,97 @@ export interface SystemStatusResponse {
   model_status: string;
 }
 
-export interface DemoMetricsResponse {
-  tree_count: number;
-  health_score: number;
-  risk: string;
+function toApiUrl(path: string): string {
+  return `${BASE}${path}`;
+}
+
+function logRequest(
+  method: "GET" | "POST",
+  path: string,
+  body?: unknown,
+): number {
+  const startedAt = Date.now();
+  if (API_DEBUG) {
+    console.log(
+      `[forestApi] ${method} ${toApiUrl(path)} — request started`,
+      body ?? "",
+    );
+  }
+  return startedAt;
+}
+
+function logSuccess(
+  method: "GET" | "POST",
+  path: string,
+  status: number,
+  startedAt: number,
+): void {
+  if (API_DEBUG) {
+    console.log(`[forestApi] ${method} ${toApiUrl(path)} — success`, {
+      status,
+      durationMs: Date.now() - startedAt,
+    });
+  }
+}
+
+function logWarning(
+  method: "GET" | "POST",
+  path: string,
+  status: number,
+  startedAt: number,
+): void {
+  console.warn(`[forestApi] ${method} ${toApiUrl(path)} — non-OK response`, {
+    status,
+    durationMs: Date.now() - startedAt,
+  });
+}
+
+function logError(
+  method: "GET" | "POST",
+  path: string,
+  startedAt: number,
+  error: unknown,
+): void {
+  console.error(`[forestApi] ${method} ${toApiUrl(path)} — request failed`, {
+    durationMs: Date.now() - startedAt,
+    error,
+  });
 }
 
 async function post<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`API ${path} failed: ${res.status}`);
-  return res.json() as Promise<T>;
+  const startedAt = logRequest("POST", path, body);
+  try {
+    const res = await fetch(toApiUrl(path), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      logWarning("POST", path, res.status, startedAt);
+      throw new Error(`API ${path} failed: ${res.status}`);
+    }
+    logSuccess("POST", path, res.status, startedAt);
+    return res.json() as Promise<T>;
+  } catch (error) {
+    logError("POST", path, startedAt, error);
+    throw error;
+  }
 }
 
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`);
-  if (!res.ok) throw new Error(`API ${path} failed: ${res.status}`);
-  return res.json() as Promise<T>;
+  const startedAt = logRequest("GET", path);
+  try {
+    const res = await fetch(toApiUrl(path));
+    if (!res.ok) {
+      logWarning("GET", path, res.status, startedAt);
+      throw new Error(`API ${path} failed: ${res.status}`);
+    }
+    logSuccess("GET", path, res.status, startedAt);
+    return res.json() as Promise<T>;
+  } catch (error) {
+    logError("GET", path, startedAt, error);
+    throw error;
+  }
 }
 
 export const forestApi = {
@@ -104,5 +177,4 @@ export const forestApi = {
 
   // Utility
   getSystemStatus: () => get<SystemStatusResponse>("/system-status"),
-  getDemoMetrics: () => get<DemoMetricsResponse>("/demo-metrics"),
 };
