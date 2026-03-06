@@ -27,8 +27,16 @@ logger = logging.getLogger(__name__)
 class ForestMetricsService:
     def __init__(self) -> None:
         from services.ml_bridge import MLBridge
+        from services.region_pipeline_service import RegionPipelineService
 
         self.ml = MLBridge.get_instance()
+        self.region_pipeline = RegionPipelineService()
+
+    def _prepare_region_data(self, polygon: list[list[float]]) -> None:
+        try:
+            self.region_pipeline.run_for_polygon(polygon)
+        except Exception as exc:
+            logger.warning("Region pipeline failed for polygon request: %s", exc)
 
     # ── DB Helpers ───────────────────────────────────────────────────────
 
@@ -60,6 +68,8 @@ class ForestMetricsService:
     # ── /forest-metrics ──────────────────────────────────────────────────
 
     def get_forest_metrics(self, polygon: list[list[float]]) -> ForestMetricsResponse:
+        self._prepare_region_data(polygon)
+
         row = self._fetch_one(
             """
             SELECT *
@@ -102,6 +112,8 @@ class ForestMetricsService:
     # ── /tree-density ────────────────────────────────────────────────────
 
     def get_tree_density(self, polygon: list[list[float]]) -> TreeDensityResponse:
+        self._prepare_region_data(polygon)
+
         row = self._fetch_one(
             """
             SELECT *
@@ -124,6 +136,8 @@ class ForestMetricsService:
     # ── /health-score ────────────────────────────────────────────────────
 
     def get_health_score(self, polygon: list[list[float]]) -> HealthScoreResponse:
+        self._prepare_region_data(polygon)
+
         row = self._fetch_one(
             """
             SELECT *
@@ -149,6 +163,8 @@ class ForestMetricsService:
     # ── /risk-alerts ─────────────────────────────────────────────────────
 
     def get_risk_alerts(self, polygon: list[list[float]]) -> RiskAlertsResponse:
+        self._prepare_region_data(polygon)
+
         row = self._fetch_one(
             """
             SELECT get_risk_alerts(CAST(:polygon AS jsonb)) AS payload
@@ -190,6 +206,8 @@ class ForestMetricsService:
     # ── /species-composition ─────────────────────────────────────────────
 
     def get_species_composition(self, polygon: list[list[float]]) -> SpeciesCompositionResponse:
+        self._prepare_region_data(polygon)
+
         row = self._fetch_one(
             """
             SELECT get_species_composition(CAST(:polygon AS jsonb)) AS payload
@@ -209,6 +227,8 @@ class ForestMetricsService:
     # ── /health-forecast ─────────────────────────────────────────────────
 
     def get_health_forecast(self, polygon: list[list[float]]) -> HealthForecastResponse:
+        self._prepare_region_data(polygon)
+
         row = self._fetch_one(
             """
             SELECT get_health_forecast(CAST(:polygon AS jsonb), 6) AS forecast
