@@ -1,4 +1,10 @@
-const BASE = (import.meta.env.VITE_API_BASE_URL || "/api").replace(/\/$/, "");
+const DEFAULT_BASE = import.meta.env.DEV
+  ? import.meta.env.VITE_BACKEND_URL || "http://localhost:8000"
+  : "/api";
+const BASE = (import.meta.env.VITE_API_BASE_URL || DEFAULT_BASE).replace(
+  /\/$/,
+  "",
+);
 const API_DEBUG =
   import.meta.env.DEV || import.meta.env.VITE_API_DEBUG === "true";
 
