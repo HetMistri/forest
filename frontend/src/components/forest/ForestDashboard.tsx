@@ -1,5 +1,5 @@
-import { useState, useCallback } from 'react';
-import { forestApi } from '../../utils/forestApi';
+import { useState, useCallback } from "react";
+import { forestApi } from "../../utils/forestApi";
 import type {
   ForestMetricsResponse,
   HealthForecastResponse,
@@ -8,14 +8,14 @@ import type {
   TreeDensityResponse,
   SpeciesCompositionResponse,
   SystemStatusResponse,
-} from '../../utils/forestApi';
-import ForestMap from './ForestMap';
-import AnalyticsPanel from './AnalyticsPanel';
-import KPISection from './KPISection';
-import amnexLogo from '../../assets/image.png';
+} from "../../utils/forestApi";
+import ForestMap from "./ForestMap";
+import AnalyticsPanel from "./AnalyticsPanel";
+import KPISection from "./KPISection";
+import amnexLogo from "../../assets/image.png";
 
-const PURPLE = '#401c86';
-const NAVY = '#020f50';
+const PURPLE = "#401c86";
+const NAVY = "#020f50";
 
 export interface DashboardState {
   metrics: ForestMetricsResponse | null;
@@ -45,7 +45,7 @@ export default function ForestDashboard() {
   });
 
   const handlePolygon = useCallback(async (coords: [number, number][]) => {
-    setState(s => ({ ...s, loading: true, error: null, polygon: coords }));
+    setState((s) => ({ ...s, loading: true, error: null, polygon: coords }));
     try {
       const [m, f, r, hs, td, sp, sys] = await Promise.all([
         forestApi.getForestMetrics(coords).catch(() => null),
@@ -57,29 +57,13 @@ export default function ForestDashboard() {
         forestApi.getSystemStatus().catch(() => null),
       ]);
 
-      let finalMetrics = m;
-      let errorMsg: string | null = null;
+      const errorMsg = !m
+        ? "Backend unavailable — unable to load analytics."
+        : null;
 
-      if (!m) {
-        errorMsg = 'Backend unavailable — showing demo data';
-        const demo = await forestApi.getDemoMetrics().catch(() => null);
-        if (demo) {
-          finalMetrics = {
-            area_km2: 5.1,
-            tree_count: demo.tree_count,
-            tree_density: 162,
-            health_score: demo.health_score,
-            risk_level: demo.risk,
-            species_distribution: { teak: 58, bamboo: 27, mixed_deciduous: 15 },
-            ndvi_avg: 0.72,
-            ndmi_avg: 0.41,
-          };
-        }
-      }
-
-      setState(s => ({
+      setState((s) => ({
         ...s,
-        metrics: finalMetrics,
+        metrics: m,
         forecast: f,
         riskData: r,
         healthScore: hs,
@@ -90,52 +74,122 @@ export default function ForestDashboard() {
         error: errorMsg,
       }));
     } catch {
-      setState(s => ({ ...s, loading: false, error: 'Analysis failed. Backend may be offline.' }));
+      setState((s) => ({
+        ...s,
+        loading: false,
+        error: "Analysis failed. Backend may be offline.",
+      }));
     }
   }, []);
 
-  const { metrics, forecast, riskData, healthScore, treeDensity, species, systemStatus, loading, error } = state;
+  const {
+    metrics,
+    forecast,
+    riskData,
+    healthScore,
+    treeDensity,
+    species,
+    systemStatus,
+    loading,
+    error,
+  } = state;
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f0f2f8', fontFamily: 'Open Sans, sans-serif' }}>
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#f0f2f8",
+        fontFamily: "Open Sans, sans-serif",
+      }}
+    >
       {/* Header */}
-      <div style={{ background: NAVY, padding: '36px 0 28px', textAlign: 'center', color: '#fff' }}>
-        <div style={{ maxWidth: 1400, margin: '0 auto', padding: '0 24px' }}>
-          <img src={amnexLogo} alt="AMNEX" style={{ height: 44, display: 'block', margin: '0 auto 14px' }} />
-          <p style={{ color: '#a78bff', fontSize: 13, fontWeight: 600, margin: '0 0 6px', letterSpacing: 1, textTransform: 'uppercase' }}>
+      <div
+        style={{
+          background: NAVY,
+          padding: "36px 0 28px",
+          textAlign: "center",
+          color: "#fff",
+        }}
+      >
+        <div style={{ maxWidth: 1400, margin: "0 auto", padding: "0 24px" }}>
+          <img
+            src={amnexLogo}
+            alt="AMNEX"
+            style={{ height: 44, display: "block", margin: "0 auto 14px" }}
+          />
+          <p
+            style={{
+              color: "#a78bff",
+              fontSize: 13,
+              fontWeight: 600,
+              margin: "0 0 6px",
+              letterSpacing: 1,
+              textTransform: "uppercase",
+            }}
+          >
             EcoKeeper · Forest Intelligence Platform
           </p>
-          <h1 style={{ margin: '0 0 10px', fontSize: 'clamp(24px, 3.5vw, 40px)', fontWeight: 700, lineHeight: 1.2 }}>
+          <h1
+            style={{
+              margin: "0 0 10px",
+              fontSize: "clamp(24px, 3.5vw, 40px)",
+              fontWeight: 700,
+              lineHeight: 1.2,
+            }}
+          >
             Dang District Forest Analytics Dashboard
           </h1>
-          <p style={{ margin: 0, color: '#b0b8d4', fontSize: 14, maxWidth: 640, marginLeft: 'auto', marginRight: 'auto', lineHeight: 1.7 }}>
-            All-weather forest monitoring powered by Sentinel-1 SAR radar &amp; Sentinel-2 optical satellite fusion.
-            Draw a polygon on the map to analyse tree count, health, species, risk alerts and 6-month forecast.
+          <p
+            style={{
+              margin: 0,
+              color: "#b0b8d4",
+              fontSize: 14,
+              maxWidth: 640,
+              marginLeft: "auto",
+              marginRight: "auto",
+              lineHeight: 1.7,
+            }}
+          >
+            All-weather forest monitoring powered by Sentinel-1 SAR radar &amp;
+            Sentinel-2 optical satellite fusion. Draw a polygon on the map to
+            analyse tree count, health, species, risk alerts and 6-month
+            forecast.
           </p>
         </div>
       </div>
 
       {/* Stats ribbon */}
-      <div style={{ background: PURPLE, padding: '12px 24px' }}>
-        <div style={{
-          maxWidth: 1400, margin: '0 auto',
-          display: 'flex', flexWrap: 'wrap', gap: '6px 28px',
-          justifyContent: 'center', alignItems: 'center',
-        }}>
+      <div style={{ background: PURPLE, padding: "12px 24px" }}>
+        <div
+          style={{
+            maxWidth: 1400,
+            margin: "0 auto",
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "6px 28px",
+            justifyContent: "center",
+            alignItems: "center",
+          }}
+        >
           {[
-            { label: 'District', value: 'Dang, Gujarat' },
-            { label: 'Forest Cover', value: '~1,764 km²' },
-            { label: 'Satellite Data', value: 'Sentinel-1 + Sentinel-2' },
-            { label: 'Model', value: 'RandomForest + Prophet' },
+            { label: "District", value: "Dang, Gujarat" },
+            { label: "Forest Cover", value: "~1,764 km²" },
+            { label: "Satellite Data", value: "Sentinel-1 + Sentinel-2" },
+            { label: "Model", value: "RandomForest + Prophet" },
             {
-              label: 'System',
+              label: "System",
               value: systemStatus
-                ? (systemStatus.model_status === 'ready' ? '✅ Live' : '⚠️ Limited')
-                : '⏳ Checking…',
+                ? systemStatus.model_status === "ready"
+                  ? "✅ Live"
+                  : "⚠️ Limited"
+                : "⏳ Checking…",
             },
           ].map(({ label, value }) => (
-            <div key={label} style={{ color: '#fff', fontSize: 12, textAlign: 'center' }}>
-              <span style={{ color: '#d4b8ff', marginRight: 5 }}>{label}:</span>
+            <div
+              key={label}
+              style={{ color: "#fff", fontSize: 12, textAlign: "center" }}
+            >
+              <span style={{ color: "#d4b8ff", marginRight: 5 }}>{label}:</span>
               <strong>{value}</strong>
             </div>
           ))}
@@ -143,23 +197,44 @@ export default function ForestDashboard() {
       </div>
 
       {/* Main layout */}
-      <div style={{ maxWidth: 1400, margin: '0 auto', padding: '22px 16px' }}>
-
+      <div style={{ maxWidth: 1400, margin: "0 auto", padding: "22px 16px" }}>
         {/* Map + side panel */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0,1fr) 380px',
-          gap: 18,
-          height: 600,
-          marginBottom: 22,
-        }}>
-          <div style={{ borderRadius: 14, overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.12)', border: '1px solid #e5e7eb' }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(0,1fr) 380px",
+            gap: 18,
+            height: 600,
+            marginBottom: 22,
+          }}
+        >
+          <div
+            style={{
+              borderRadius: 14,
+              overflow: "hidden",
+              boxShadow: "0 4px 20px rgba(0,0,0,0.12)",
+              border: "1px solid #e5e7eb",
+            }}
+          >
             <ForestMap
               onPolygonDrawn={handlePolygon}
-              riskAlerts={riskData?.alerts?.map(a => ({ location: a.location as [number, number], severity: a.severity })) ?? []}
+              riskAlerts={
+                riskData?.alerts?.map((a) => ({
+                  location: a.location as [number, number],
+                  severity: a.severity,
+                })) ?? []
+              }
             />
           </div>
-          <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 4px 20px rgba(0,0,0,0.08)', border: '1px solid #e5e7eb', overflow: 'hidden' }}>
+          <div
+            style={{
+              background: "#fff",
+              borderRadius: 14,
+              boxShadow: "0 4px 20px rgba(0,0,0,0.08)",
+              border: "1px solid #e5e7eb",
+              overflow: "hidden",
+            }}
+          >
             <AnalyticsPanel
               metrics={metrics}
               forecast={forecast}
@@ -181,54 +256,199 @@ export default function ForestDashboard() {
 
         {/* How it works */}
         <div style={{ marginTop: 36, marginBottom: 20 }}>
-          <p style={{ color: PURPLE, fontSize: 13, fontWeight: 600, margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: 0.8 }}>
+          <p
+            style={{
+              color: PURPLE,
+              fontSize: 13,
+              fontWeight: 600,
+              margin: "0 0 4px",
+              textTransform: "uppercase",
+              letterSpacing: 0.8,
+            }}
+          >
             How It Works
           </p>
-          <h2 style={{ color: NAVY, fontSize: 'clamp(20px, 2.5vw, 30px)', fontWeight: 700, margin: '6px 0 20px', lineHeight: 1.25 }}>
+          <h2
+            style={{
+              color: NAVY,
+              fontSize: "clamp(20px, 2.5vw, 30px)",
+              fontWeight: 700,
+              margin: "6px 0 20px",
+              lineHeight: 1.25,
+            }}
+          >
             Satellite-Powered Forest Intelligence Pipeline
           </h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
+              gap: 14,
+            }}
+          >
             {[
-              { step: '01', icon: '🛰️', title: 'Satellite Ingestion', desc: 'Sentinel-1 SAR (VV/VH) and Sentinel-2 optical imagery ingested via Google Earth Engine.' },
-              { step: '02', icon: '🔬', title: 'Feature Extraction', desc: 'NDVI, NDMI, and SAR backscatter computed and aggregated into hectare-level grid cells.' },
-              { step: '03', icon: '🤖', title: 'ML Models', desc: 'RandomForestRegressor predicts tree density; NDVI/NDMI drives health scoring; Prophet forecasts trends.' },
-              { step: '04', icon: '⚠️', title: 'Risk Detection', desc: 'NDVI drop anomaly detection flags deforestation and forest fire hotspots for immediate response.' },
-              { step: '05', icon: '📊', title: 'Live Dashboard', desc: 'Draw any polygon to get instant tree count, health score, risk zones, and 6-month projection.' },
+              {
+                step: "01",
+                icon: "🛰️",
+                title: "Satellite Ingestion",
+                desc: "Sentinel-1 SAR (VV/VH) and Sentinel-2 optical imagery ingested via Google Earth Engine.",
+              },
+              {
+                step: "02",
+                icon: "🔬",
+                title: "Feature Extraction",
+                desc: "NDVI, NDMI, and SAR backscatter computed and aggregated into hectare-level grid cells.",
+              },
+              {
+                step: "03",
+                icon: "🤖",
+                title: "ML Models",
+                desc: "RandomForestRegressor predicts tree density; NDVI/NDMI drives health scoring; Prophet forecasts trends.",
+              },
+              {
+                step: "04",
+                icon: "⚠️",
+                title: "Risk Detection",
+                desc: "NDVI drop anomaly detection flags deforestation and forest fire hotspots for immediate response.",
+              },
+              {
+                step: "05",
+                icon: "📊",
+                title: "Live Dashboard",
+                desc: "Draw any polygon to get instant tree count, health score, risk zones, and 6-month projection.",
+              },
             ].map(({ step, icon, title, desc }) => (
-              <div key={step} style={{ background: '#fff', borderRadius: 12, padding: '18px 16px', border: '1px solid #e5e7eb', boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: PURPLE, background: '#f0ebff', borderRadius: 4, padding: '2px 6px' }}>{step}</span>
+              <div
+                key={step}
+                style={{
+                  background: "#fff",
+                  borderRadius: 12,
+                  padding: "18px 16px",
+                  border: "1px solid #e5e7eb",
+                  boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    marginBottom: 8,
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: PURPLE,
+                      background: "#f0ebff",
+                      borderRadius: 4,
+                      padding: "2px 6px",
+                    }}
+                  >
+                    {step}
+                  </span>
                   <span style={{ fontSize: 18 }}>{icon}</span>
                 </div>
-                <h4 style={{ margin: '0 0 5px', color: NAVY, fontSize: 13, fontWeight: 700 }}>{title}</h4>
-                <p style={{ margin: 0, color: '#6b7280', fontSize: 12, lineHeight: 1.6 }}>{desc}</p>
+                <h4
+                  style={{
+                    margin: "0 0 5px",
+                    color: NAVY,
+                    fontSize: 13,
+                    fontWeight: 700,
+                  }}
+                >
+                  {title}
+                </h4>
+                <p
+                  style={{
+                    margin: 0,
+                    color: "#6b7280",
+                    fontSize: 12,
+                    lineHeight: 1.6,
+                  }}
+                >
+                  {desc}
+                </p>
               </div>
             ))}
           </div>
         </div>
 
         {/* Differentiator callout */}
-        <div style={{
-          background: `linear-gradient(135deg, ${NAVY} 0%, #0f497b 100%)`,
-          borderRadius: 14, padding: '28px 32px', color: '#fff', marginBottom: 24,
-          display: 'flex', gap: 24, alignItems: 'center', flexWrap: 'wrap',
-        }}>
-          <div style={{ flex: '1 1 260px' }}>
-            <p style={{ color: '#a78bff', fontSize: 12, fontWeight: 600, margin: '0 0 6px', textTransform: 'uppercase' }}>Key Technical Differentiator</p>
-            <h3 style={{ margin: '0 0 8px', fontSize: 20, fontWeight: 700, lineHeight: 1.3 }}>All-Weather Forest Monitoring</h3>
-            <p style={{ color: '#b0b8d4', fontSize: 13, lineHeight: 1.7, margin: 0 }}>
-              Traditional optical satellites fail during monsoon cloud cover — the season when deforestation risk is highest.
-              Our SAR + optical fusion provides reliable data year-round, giving forest officers actionable intelligence exactly when they need it most.
+        <div
+          style={{
+            background: `linear-gradient(135deg, ${NAVY} 0%, #0f497b 100%)`,
+            borderRadius: 14,
+            padding: "28px 32px",
+            color: "#fff",
+            marginBottom: 24,
+            display: "flex",
+            gap: 24,
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ flex: "1 1 260px" }}>
+            <p
+              style={{
+                color: "#a78bff",
+                fontSize: 12,
+                fontWeight: 600,
+                margin: "0 0 6px",
+                textTransform: "uppercase",
+              }}
+            >
+              Key Technical Differentiator
+            </p>
+            <h3
+              style={{
+                margin: "0 0 8px",
+                fontSize: 20,
+                fontWeight: 700,
+                lineHeight: 1.3,
+              }}
+            >
+              All-Weather Forest Monitoring
+            </h3>
+            <p
+              style={{
+                color: "#b0b8d4",
+                fontSize: 13,
+                lineHeight: 1.7,
+                margin: 0,
+              }}
+            >
+              Traditional optical satellites fail during monsoon cloud cover —
+              the season when deforestation risk is highest. Our SAR + optical
+              fusion provides reliable data year-round, giving forest officers
+              actionable intelligence exactly when they need it most.
             </p>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, flex: '0 0 auto' }}>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 10,
+              flex: "0 0 auto",
+            }}
+          >
             {[
-              { icon: '📡', text: 'Sentinel-1 SAR — cloud-penetrating radar' },
-              { icon: '🌿', text: 'Sentinel-2 optical — vegetation indices' },
-              { icon: '🔀', text: 'Data fusion for all-weather monitoring' },
-              { icon: '🔥', text: 'Fire risk detection via thermal anomalies' },
+              { icon: "📡", text: "Sentinel-1 SAR — cloud-penetrating radar" },
+              { icon: "🌿", text: "Sentinel-2 optical — vegetation indices" },
+              { icon: "🔀", text: "Data fusion for all-weather monitoring" },
+              { icon: "🔥", text: "Fire risk detection via thermal anomalies" },
             ].map(({ icon, text }) => (
-              <div key={text} style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#e2e8f0', fontSize: 13 }}>
+              <div
+                key={text}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  color: "#e2e8f0",
+                  fontSize: 13,
+                }}
+              >
                 <span style={{ fontSize: 16 }}>{icon}</span> {text}
               </div>
             ))}
