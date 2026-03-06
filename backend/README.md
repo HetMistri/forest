@@ -71,3 +71,29 @@ with engine.raw_connection() as raw:
 print('Bootstrap applied')
 PY
 ```
+
+## 6) Docker local stack (PostGIS + Backend)
+
+From repository root:
+
+```bash
+docker compose up --build
+```
+
+Services:
+
+- Backend API: `http://127.0.0.1:8000`
+- Swagger: `http://127.0.0.1:8000/docs`
+- Local PostGIS: `localhost:5433`
+
+Notes:
+
+- `docker-compose.yml` uses local PostGIS (`postgis/postgis`) and mounts `backend/sql/bootstrap.sql` into `/docker-entrypoint-initdb.d/`.
+- Bootstrap runs automatically on first DB initialization.
+- The container backend uses local DB URL, so remote `DATABASE_URL` latency is avoided.
+- To reset DB and re-run bootstrap from scratch:
+
+```bash
+docker compose down -v
+docker compose up --build
+```
