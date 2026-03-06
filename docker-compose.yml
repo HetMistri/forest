@@ -1,0 +1,44 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    container_name: forest-postgis
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: forest_local
+      POSTGRES_USER: forest
+      POSTGRES_PASSWORD: forest
+    ports:
+      - "5433:5432"
+    volumes:
+      - forest_postgres_data:/var/lib/postgresql/data
+      - ./backend/sql/bootstrap.sql:/docker-entrypoint-initdb.d/01-bootstrap.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U forest -d forest_local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: forest-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      APP_NAME: Forest_Analytics_API
+      APP_ENV: production
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8000
+      DATABASE_URL: postgresql+psycopg://forest:forest@db:5432/forest_local
+      DEMO_CACHE_ENABLED: "true"
+      REGION_PIPELINE_ENABLED: "false"
+      CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+    ports:
+      - "8000:8000"
+    command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+volumes:
+  forest_postgres_data:
