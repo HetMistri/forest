@@ -174,7 +174,10 @@ export default function AnalyticsPanel({
             animation: "spin 0.8s linear infinite",
           }}
         />
-        <p style={{ color: "#6b7280", fontSize: 13 }}>Analysing forest data…</p>
+        <p style={{ color: "#6b7280", fontSize: 13 }}>
+          Analysing forest data… this may take up to 1–2 minutes while satellite
+          features are prepared.
+        </p>
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     );

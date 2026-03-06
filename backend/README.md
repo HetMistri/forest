@@ -13,7 +13,16 @@ Update `.env` with your Render external DB URL using SQLAlchemy format:
 
 ```env
 DATABASE_URL=postgresql+psycopg://<user>:<password>@<host>:5432/<database>
+STRICT_PROD_MODE=true
+DEMO_CACHE_ENABLED=false
+REGION_PIPELINE_TRIGGER_ON_REQUEST=true
+INGESTION_INTERACTIVE_AUTH=false
+GEE_PROJECT=<gcp-project-id>
+GEE_SERVICE_ACCOUNT=<service-account>@<project>.iam.gserviceaccount.com
+GEE_PRIVATE_KEY_FILE=/absolute/path/to/service-account-key.json
 ```
+
+When `STRICT_PROD_MODE=true`, endpoints return `503` if real DB/pipeline data is unavailable (no dummy/static fallback).
 
 ## 2) Run server
 

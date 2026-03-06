@@ -120,6 +120,28 @@ function logError(
   });
 }
 
+async function parseErrorDetail(res: Response): Promise<string> {
+  try {
+    const payload = (await res.json()) as { detail?: unknown };
+    if (typeof payload.detail === "string" && payload.detail.trim()) {
+      return payload.detail;
+    }
+  } catch (error) {
+    void error;
+  }
+
+  try {
+    const text = await res.text();
+    if (text.trim()) {
+      return text;
+    }
+  } catch (error) {
+    void error;
+  }
+
+  return `HTTP ${res.status}`;
+}
+
 async function post<T>(path: string, body: unknown): Promise<T> {
   const startedAt = logRequest("POST", path, body);
   try {
@@ -130,7 +152,8 @@ async function post<T>(path: string, body: unknown): Promise<T> {
     });
     if (!res.ok) {
       logWarning("POST", path, res.status, startedAt);
-      throw new Error(`API ${path} failed: ${res.status}`);
+      const detail = await parseErrorDetail(res);
+      throw new Error(`API ${path} failed: ${detail}`);
     }
     logSuccess("POST", path, res.status, startedAt);
     return res.json() as Promise<T>;
@@ -146,7 +169,8 @@ async function get<T>(path: string): Promise<T> {
     const res = await fetch(toApiUrl(path));
     if (!res.ok) {
       logWarning("GET", path, res.status, startedAt);
-      throw new Error(`API ${path} failed: ${res.status}`);
+      const detail = await parseErrorDetail(res);
+      throw new Error(`API ${path} failed: ${detail}`);
     }
     logSuccess("GET", path, res.status, startedAt);
     return res.json() as Promise<T>;

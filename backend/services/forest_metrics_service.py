@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
+from datetime import datetime, timedelta, timezone
 from hashlib import sha1
 from typing import Any
 
+from fastapi import HTTPException
 from sqlalchemy import text
 
 from api.db import get_engine
@@ -33,10 +36,15 @@ class ForestMetricsService:
 
         self.ml = MLBridge.get_instance()
         self.region_pipeline = RegionPipelineService()
-        self.demo_cache_enabled = os.getenv("DEMO_CACHE_ENABLED", "true").lower() == "true"
+        self.strict_prod_mode = os.getenv("STRICT_PROD_MODE", "true").lower() == "true"
+        self.demo_cache_enabled = os.getenv("DEMO_CACHE_ENABLED", "false").lower() == "true"
         self.trigger_pipeline_on_request = (
-            os.getenv("REGION_PIPELINE_TRIGGER_ON_REQUEST", "false").lower() == "true"
+            os.getenv("REGION_PIPELINE_TRIGGER_ON_REQUEST", "true").lower() == "true"
         )
+
+    def _strict_unavailable(self, endpoint: str, detail: str) -> None:
+        logger.error("%s unavailable in strict mode: %s", endpoint, detail)
+        raise HTTPException(status_code=503, detail=detail)
 
     def _prepare_region_data(self, polygon: list[list[float]]) -> None:
         if not self.trigger_pipeline_on_request:
@@ -81,7 +89,141 @@ class ForestMetricsService:
             return []
 
     def _area_km2(self, polygon: list[list[float]]) -> float:
-        return round(max(len(polygon) - 2, 1) * 0.85, 2)
+        """
+        Estimate polygon area in square-kilometers from [lon, lat] coordinates.
+
+        Uses a spherical polygon area approximation (WGS84 mean Earth radius),
+        which is stable for both small and very large regions.
+        """
+        if len(polygon) < 3:
+            return 0.0
+
+        ring = [(float(point[0]), float(point[1])) for point in polygon if len(point) >= 2]
+        if len(ring) < 3:
+            return 0.0
+
+        if ring[0] != ring[-1]:
+            ring.append(ring[0])
+
+        earth_radius_m = 6_371_008.8
+        area_accumulator = 0.0
+
+        for index in range(len(ring) - 1):
+            lon1_deg, lat1_deg = ring[index]
+            lon2_deg, lat2_deg = ring[index + 1]
+
+            lat1 = math.radians(lat1_deg)
+            lat2 = math.radians(lat2_deg)
+            lon1 = math.radians(lon1_deg)
+            lon2 = math.radians(lon2_deg)
+
+            delta_lon = lon2 - lon1
+            if delta_lon > math.pi:
+                delta_lon -= 2 * math.pi
+            elif delta_lon < -math.pi:
+                delta_lon += 2 * math.pi
+
+            area_accumulator += delta_lon * (math.sin(lat1) + math.sin(lat2))
+
+        area_m2 = abs(area_accumulator) * (earth_radius_m**2) / 2.0
+        area_km2 = area_m2 / 1_000_000.0
+        return round(area_km2, 2)
+
+    def _clamp(self, value: float, low: float, high: float) -> float:
+        return max(low, min(high, value))
+
+    def _feature_summary(self, polygon: list[list[float]]) -> dict[str, Any] | None:
+        row = self._fetch_one(
+            """
+            WITH poly AS (
+                SELECT json_polygon_to_geom(CAST(:polygon AS jsonb)) AS geom
+            )
+            SELECT
+                COUNT(*)::int AS sample_count,
+                COALESCE(AVG(ff.ndvi), 0) AS ndvi_avg,
+                COALESCE(AVG(ff.ndmi), 0) AS ndmi_avg,
+                COALESCE(AVG(ff.vv), -7.5) AS vv_avg,
+                COALESCE(AVG(ff.vh), -14.2) AS vh_avg,
+                COALESCE(AVG(ff.vv_vh_ratio), 0.52) AS vv_vh_ratio_avg,
+                COALESCE(AVG(ff.ndvi_trend), 0) AS ndvi_trend_avg,
+                COALESCE(ST_X(ST_Centroid(ST_Collect(ff.geometry))), 0) AS centroid_lon,
+                COALESCE(ST_Y(ST_Centroid(ST_Collect(ff.geometry))), 0) AS centroid_lat
+            FROM forest_features ff
+            CROSS JOIN poly
+            WHERE ST_Intersects(ff.geometry, poly.geom)
+            """,
+            {"polygon": json.dumps(polygon)},
+        )
+        if not row or int(row.get("sample_count") or 0) <= 0:
+            return None
+        return row
+
+    def _derive_live_metrics_from_features(self, polygon: list[list[float]]) -> dict[str, Any] | None:
+        summary = self._feature_summary(polygon)
+        if summary is None:
+            return None
+
+        ndvi_avg = float(summary.get("ndvi_avg") or 0)
+        ndmi_avg = float(summary.get("ndmi_avg") or 0)
+        vv_avg = float(summary.get("vv_avg") or -7.5)
+        vh_avg = float(summary.get("vh_avg") or -14.2)
+        vv_vh_ratio_avg = float(summary.get("vv_vh_ratio_avg") or 0.52)
+        ndvi_trend_avg = float(summary.get("ndvi_trend_avg") or 0)
+        area_km2 = self._area_km2(polygon)
+
+        tree_density = self.ml.predict_density(
+            ndvi=ndvi_avg,
+            ndmi=ndmi_avg,
+            vv=vv_avg,
+            vh=vh_avg,
+            sar_ratio=vv_vh_ratio_avg,
+        )
+        tree_count = self.ml.calculate_total_trees(tree_density, area_km2)
+        health_score = float(self.ml.compute_health(ndvi_avg, ndmi_avg))
+
+        if ndvi_trend_avg <= -0.08 or health_score < 40:
+            risk_level = "High"
+        elif ndvi_trend_avg <= -0.03 or health_score < 70:
+            risk_level = "Moderate"
+        else:
+            risk_level = "Low"
+
+        teak = self._clamp(44.0 + (ndvi_avg * 32.0) + (ndmi_avg * 6.0), 10.0, 82.0)
+        bamboo = self._clamp(30.0 + (ndmi_avg * 24.0) - (ndvi_avg * 8.0), 8.0, 75.0)
+        mixed_deciduous = self._clamp(100.0 - teak - bamboo, 5.0, 85.0)
+        total = teak + bamboo + mixed_deciduous
+        species_distribution = {
+            "teak": round((teak / total) * 100.0, 2),
+            "bamboo": round((bamboo / total) * 100.0, 2),
+            "mixed_deciduous": round((mixed_deciduous / total) * 100.0, 2),
+        }
+
+        trend_impact = self._clamp(ndvi_trend_avg * 120.0, -6.0, 6.0)
+        forecast_points: list[dict[str, Any]] = []
+        base_dt = datetime.now(timezone.utc)
+        for i in range(1, 7):
+            projected = self._clamp(health_score + (trend_impact * i), 0.0, 100.0)
+            forecast_points.append(
+                {
+                    "month": (base_dt + timedelta(days=30 * i)).strftime("%Y-%m"),
+                    "health_score": round(projected, 2),
+                }
+            )
+
+        return {
+            "area_km2": area_km2,
+            "tree_density": tree_density,
+            "tree_count": tree_count,
+            "health_score": health_score,
+            "risk_level": risk_level,
+            "species_distribution": species_distribution,
+            "forecast_health": float(forecast_points[0]["health_score"]),
+            "forecast_points": forecast_points,
+            "ndvi_avg": ndvi_avg,
+            "ndmi_avg": ndmi_avg,
+            "centroid_lon": float(summary.get("centroid_lon") or 0),
+            "centroid_lat": float(summary.get("centroid_lat") or 0),
+        }
 
     def _get_demo_cached_forest_metrics(
         self,
@@ -163,7 +305,26 @@ class ForestMetricsService:
                 forecast_health=float(row.get("forecast_health") or 0),
             )
 
-        # ── ML fallback ──────────────────────────────────────────────────
+        derived = self._derive_live_metrics_from_features(polygon)
+        if derived is not None:
+            logger.info("Forest metrics served from feature-derived live computation (polygon=%s)", polygon_fp)
+            return ForestMetricsResponse(
+                area_km2=float(derived["area_km2"]),
+                tree_count=int(derived["tree_count"]),
+                tree_density=float(derived["tree_density"]),
+                health_score=float(derived["health_score"]),
+                risk_level=str(derived["risk_level"]),
+                species_distribution=dict(derived["species_distribution"]),
+                forecast_health=float(derived["forecast_health"]),
+            )
+
+        if self.strict_prod_mode:
+            self._strict_unavailable(
+                "/forest-metrics",
+                "No real metrics available for selected polygon. Ensure pipeline ingestion/extraction completed and DB functions are populated.",
+            )
+
+        # Legacy fallback mode (non-strict)
         logger.warning("Forest metrics fallback to ML bridge (polygon=%s)", polygon_fp)
         area_km2 = self._area_km2(polygon)
         tree_density = self.ml.predict_density()
@@ -174,7 +335,7 @@ class ForestMetricsService:
         forecast_points = self.ml.forecast_as_monthly_points()
         forecast_health = float(forecast_points[0]["health_score"]) if forecast_points else health_score
 
-        response = ForestMetricsResponse(
+        return ForestMetricsResponse(
             area_km2=area_km2,
             tree_count=tree_count,
             tree_density=tree_density,
@@ -183,22 +344,12 @@ class ForestMetricsService:
             species_distribution={"teak": 58.0, "bamboo": 27.0, "mixed_deciduous": 15.0},
             forecast_health=forecast_health,
         )
-        logger.info(
-            "Forest metrics ML fallback result (polygon=%s, area_km2=%.2f, tree_density=%.2f, health_score=%.2f, risk_level=%s)",
-            polygon_fp,
-            response.area_km2,
-            response.tree_density,
-            response.health_score,
-            response.risk_level,
-        )
-        return response
 
     # ── /tree-density ────────────────────────────────────────────────────
 
     def get_tree_density(self, polygon: list[list[float]]) -> TreeDensityResponse:
         polygon_fp = self._polygon_fingerprint(polygon)
         logger.info("Tree density requested (polygon=%s, points=%d)", polygon_fp, len(polygon))
-        self._prepare_region_data(polygon)
 
         row = self._fetch_one(
             """
@@ -214,7 +365,21 @@ class ForestMetricsService:
                 total_trees=int(round(float(row.get("total_trees") or 0))),
             )
 
-        # ── ML fallback ──────────────────────────────────────────────────
+        derived = self._derive_live_metrics_from_features(polygon)
+        if derived is not None:
+            logger.info("Tree density served from feature-derived live computation (polygon=%s)", polygon_fp)
+            return TreeDensityResponse(
+                tree_density=float(derived["tree_density"]),
+                total_trees=int(derived["tree_count"]),
+            )
+
+        if self.strict_prod_mode:
+            self._strict_unavailable(
+                "/tree-density",
+                "No real tree density available for selected polygon. Run pipeline and verify forest feature tables are populated.",
+            )
+
+        # Legacy fallback mode (non-strict)
         logger.warning("Tree density fallback to ML bridge (polygon=%s)", polygon_fp)
         area_km2 = self._area_km2(polygon)
         tree_density = self.ml.predict_density()
@@ -226,7 +391,6 @@ class ForestMetricsService:
     def get_health_score(self, polygon: list[list[float]]) -> HealthScoreResponse:
         polygon_fp = self._polygon_fingerprint(polygon)
         logger.info("Health score requested (polygon=%s, points=%d)", polygon_fp, len(polygon))
-        self._prepare_region_data(polygon)
 
         row = self._fetch_one(
             """
@@ -243,7 +407,22 @@ class ForestMetricsService:
                 ndmi_avg=float(row.get("ndmi_avg") or 0),
             )
 
-        # ── ML fallback ──────────────────────────────────────────────────
+        derived = self._derive_live_metrics_from_features(polygon)
+        if derived is not None:
+            logger.info("Health score served from feature-derived live computation (polygon=%s)", polygon_fp)
+            return HealthScoreResponse(
+                health_score=float(derived["health_score"]),
+                ndvi_avg=float(derived["ndvi_avg"]),
+                ndmi_avg=float(derived["ndmi_avg"]),
+            )
+
+        if self.strict_prod_mode:
+            self._strict_unavailable(
+                "/health-score",
+                "No real health score available for selected polygon. Run pipeline and verify NDVI/NDMI aggregation is available.",
+            )
+
+        # Legacy fallback mode (non-strict)
         logger.warning("Health score fallback to ML bridge (polygon=%s)", polygon_fp)
         ndvi_avg = 0.72
         ndmi_avg = 0.41
@@ -257,7 +436,6 @@ class ForestMetricsService:
     def get_risk_alerts(self, polygon: list[list[float]]) -> RiskAlertsResponse:
         polygon_fp = self._polygon_fingerprint(polygon)
         logger.info("Risk alerts requested (polygon=%s, points=%d)", polygon_fp, len(polygon))
-        self._prepare_region_data(polygon)
 
         row = self._fetch_one(
             """
@@ -282,7 +460,31 @@ class ForestMetricsService:
                 alerts=alerts,
             )
 
-        # ── ML fallback ──────────────────────────────────────────────────
+        derived = self._derive_live_metrics_from_features(polygon)
+        if derived is not None:
+            logger.info("Risk alerts served from feature-derived live computation (polygon=%s)", polygon_fp)
+            risk_level = str(derived["risk_level"])
+            alerts: list[RiskAlert] = []
+            if risk_level != "Low":
+                alerts.append(
+                    RiskAlert(
+                        type="NDVI_TREND",
+                        severity=risk_level,
+                        location=[
+                            float(derived["centroid_lat"]),
+                            float(derived["centroid_lon"]),
+                        ],
+                    )
+                )
+            return RiskAlertsResponse(risk_level=risk_level, alerts=alerts)
+
+        if self.strict_prod_mode:
+            self._strict_unavailable(
+                "/risk-alerts",
+                "No real risk alerts available for selected polygon. Run pipeline and verify risk alert generation data is available.",
+            )
+
+        # Legacy fallback mode (non-strict)
         logger.warning("Risk alerts fallback to ML bridge (polygon=%s)", polygon_fp)
         risk_raw = self.ml.detect_risk()
         risk_level = self.ml.classify_risk_level(risk_raw)
@@ -304,7 +506,6 @@ class ForestMetricsService:
     def get_species_composition(self, polygon: list[list[float]]) -> SpeciesCompositionResponse:
         polygon_fp = self._polygon_fingerprint(polygon)
         logger.info("Species composition requested (polygon=%s, points=%d)", polygon_fp, len(polygon))
-        self._prepare_region_data(polygon)
 
         row = self._fetch_one(
             """
@@ -321,6 +522,22 @@ class ForestMetricsService:
                 mixed_deciduous=float(payload.get("mixed_deciduous") or 0),
             )
 
+        derived = self._derive_live_metrics_from_features(polygon)
+        if derived is not None:
+            species_distribution = dict(derived["species_distribution"])
+            logger.info("Species composition served from feature-derived live computation (polygon=%s)", polygon_fp)
+            return SpeciesCompositionResponse(
+                teak=float(species_distribution.get("teak") or 0),
+                bamboo=float(species_distribution.get("bamboo") or 0),
+                mixed_deciduous=float(species_distribution.get("mixed_deciduous") or 0),
+            )
+
+        if self.strict_prod_mode:
+            self._strict_unavailable(
+                "/species-composition",
+                "No real species composition available for selected polygon. Run pipeline and verify species composition source data.",
+            )
+
         logger.warning("Species composition using static fallback values (polygon=%s)", polygon_fp)
         return SpeciesCompositionResponse(teak=58.0, bamboo=27.0, mixed_deciduous=15.0)
 
@@ -329,7 +546,6 @@ class ForestMetricsService:
     def get_health_forecast(self, polygon: list[list[float]]) -> HealthForecastResponse:
         polygon_fp = self._polygon_fingerprint(polygon)
         logger.info("Health forecast requested (polygon=%s, points=%d)", polygon_fp, len(polygon))
-        self._prepare_region_data(polygon)
 
         row = self._fetch_one(
             """
@@ -348,7 +564,22 @@ class ForestMetricsService:
             logger.info("Health forecast served from database function get_health_forecast (polygon=%s)", polygon_fp)
             return HealthForecastResponse(forecast=forecast)
 
-        # ── ML fallback ──────────────────────────────────────────────────
+        derived = self._derive_live_metrics_from_features(polygon)
+        if derived is not None:
+            logger.info("Health forecast served from feature-derived live computation (polygon=%s)", polygon_fp)
+            forecast = [
+                ForecastPoint(month=str(item["month"]), health_score=float(item["health_score"]))
+                for item in derived["forecast_points"]
+            ]
+            return HealthForecastResponse(forecast=forecast)
+
+        if self.strict_prod_mode:
+            self._strict_unavailable(
+                "/health-forecast",
+                "No real health forecast available for selected polygon. Run pipeline and verify historical series is available.",
+            )
+
+        # Legacy fallback mode (non-strict)
         logger.warning("Health forecast fallback to ML bridge (polygon=%s)", polygon_fp)
         points_raw = self.ml.forecast_as_monthly_points()
         forecast = [
@@ -402,13 +633,12 @@ class ForestMetricsService:
                 model_status=str(payload.get("model_status", "unknown")),
             )
 
-        # ── ML fallback ──────────────────────────────────────────────────
         ml_status = self.ml.get_status()
-        logger.warning("System status fallback to ML bridge status: %s", ml_status)
+        logger.warning("System status derived from ML/DB availability status: %s", ml_status)
         return SystemStatusResponse(
-            satellite_data_loaded=True,
-            feature_dataset_rows=45231,
-            model_status="ml_ready" if ml_status["model_loaded"] else "ml_not_loaded",
+            satellite_data_loaded=False,
+            feature_dataset_rows=0,
+            model_status="ml_ready" if ml_status.get("model_loaded") else "ml_not_loaded",
         )
 
     # ── /demo-metrics ────────────────────────────────────────────────────
@@ -430,17 +660,7 @@ class ForestMetricsService:
                 risk=str(payload.get("risk", "Low")),
             )
 
-        # ── ML fallback (demo polygon: 5.1 km²) ─────────────────────────
-        logger.warning("Demo metrics fallback to ML bridge")
-        demo_area_km2 = 5.1
-        density = self.ml.predict_density()
-        tree_count = self.ml.calculate_total_trees(density, demo_area_km2)
-        health = self.ml.compute_health()
-        risk_raw = self.ml.detect_risk()
-        risk_level = self.ml.classify_risk_level(risk_raw)
-
-        return DemoMetricsResponse(
-            tree_count=tree_count,
-            health_score=float(health),
-            risk=risk_level,
+        self._strict_unavailable(
+            "/demo-metrics",
+            "Demo endpoint has no cached real data. Demo/static fallbacks are disabled in strict mode.",
         )
