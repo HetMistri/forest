@@ -660,7 +660,22 @@ class ForestMetricsService:
                 risk=str(payload.get("risk", "Low")),
             )
 
-        self._strict_unavailable(
-            "/demo-metrics",
-            "Demo endpoint has no cached real data. Demo/static fallbacks are disabled in strict mode.",
+        if self.strict_prod_mode:
+            self._strict_unavailable(
+                "/demo-metrics",
+                "Demo endpoint has no cached real data. Demo/static fallbacks are disabled in strict mode.",
+            )
+
+        logger.warning("Demo metrics fallback to ML bridge")
+        demo_area_km2 = 5.1
+        density = self.ml.predict_density()
+        tree_count = self.ml.calculate_total_trees(density, demo_area_km2)
+        health = self.ml.compute_health()
+        risk_raw = self.ml.detect_risk()
+        risk_level = self.ml.classify_risk_level(risk_raw)
+
+        return DemoMetricsResponse(
+            tree_count=tree_count,
+            health_score=float(health),
+            risk=risk_level,
         )

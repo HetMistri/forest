@@ -32,6 +32,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     _ensure_backend_on_path()
+    
+    # Load .env file (for GEE credentials)
+    from dotenv import load_dotenv
+    repo_root = Path(__file__).resolve().parents[1]
+    load_dotenv(repo_root / "backend" / ".env", override=True)
 
     args = _build_parser().parse_args()
     if args.write_to_db is not None:

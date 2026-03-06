@@ -75,27 +75,30 @@ class PostgresFeatureStore:
             """
         )
 
-        with self._engine.begin() as connection:
-            for row in records:
-                connection.execute(
-                    statement,
-                    {
-                        "grid_id": row.grid_id,
-                        "min_lon": row.min_lon,
-                        "min_lat": row.min_lat,
-                        "max_lon": row.max_lon,
-                        "max_lat": row.max_lat,
-                        "ndvi": row.ndvi,
-                        "ndmi": row.ndmi,
-                        "sar_ratio": row.vv_vh_ratio,
-                        "evi": row.evi,
-                        "vv": row.vv,
-                        "vh": row.vh,
-                        "vv_vh_ratio": row.vv_vh_ratio,
-                        "ndvi_trend": row.ndvi_trend,
-                        "source": row.source,
-                        "captured_at": row.captured_at,
-                    },
-                )
+        batch_size = 50
+        for i in range(0, len(records), batch_size):
+            chunk = records[i : i + batch_size]
+            with self._engine.begin() as connection:
+                for row in chunk:
+                    connection.execute(
+                        statement,
+                        {
+                            "grid_id": row.grid_id,
+                            "min_lon": row.min_lon,
+                            "min_lat": row.min_lat,
+                            "max_lon": row.max_lon,
+                            "max_lat": row.max_lat,
+                            "ndvi": row.ndvi,
+                            "ndmi": row.ndmi,
+                            "sar_ratio": row.vv_vh_ratio,
+                            "evi": row.evi,
+                            "vv": row.vv,
+                            "vh": row.vh,
+                            "vv_vh_ratio": row.vv_vh_ratio,
+                            "ndvi_trend": row.ndvi_trend,
+                            "source": row.source,
+                            "captured_at": row.captured_at,
+                        },
+                    )
 
         return len(records)

@@ -57,8 +57,8 @@ class MLBridge:
         self,
         ndvi: float = 0.65,
         ndmi: float = 0.40,
-        vv: float = -7.5,
-        vh: float = -14.2,
+        vv: float | None = None,
+        vh: float | None = None,
         sar_ratio: float = 0.52,
     ) -> float:
         """
@@ -71,6 +71,13 @@ class MLBridge:
             return 162.0
 
         try:
+            # Reconstruct missing VV/VH if only SAR ratio is provided (e.g. from DB)
+            if vv is None or vh is None:
+                vh_assumed = -14.2  # typical baseline
+                vv_assumed = vh_assumed * sar_ratio
+                vv = vv if vv is not None else vv_assumed
+                vh = vh if vh is not None else vh_assumed
+
             features = pd.DataFrame(
                 [{"NDVI": ndvi, "NDMI": ndmi, "VV": vv, "VH": vh, "SAR_Ratio": sar_ratio}]
             )
