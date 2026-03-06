@@ -28,7 +28,7 @@ class IngestionConfig:
     interactive_auth: bool = field(
         default_factory=lambda: os.getenv("INGESTION_INTERACTIVE_AUTH", "false").lower() == "true"
     )
-    bands: tuple[str, ...] = field(default_factory=lambda: _parse_bands(os.getenv("INGESTION_BANDS", "B4,B8,B11")))
+    bands: tuple[str, ...] = field(default_factory=lambda: _parse_bands(os.getenv("INGESTION_BANDS", "B2,B4,B8,B11")))
     output_name: str = field(default_factory=lambda: os.getenv("INGESTION_OUTPUT_NAME", "sentinel2_composite.tif"))
     output_dir: Path = field(default_factory=lambda: _default_output_dir())
 
@@ -59,11 +59,61 @@ class IngestionConfig:
                     raise ValueError("Each region polygon point must contain [lon, lat]")
 
 
-class Sentinel2Downloader:
-    """Downloads Sentinel-2 composite imagery from Google Earth Engine."""
+@dataclass(slots=True)
+class Sentinel1IngestionConfig:
+    start_date: str = field(default_factory=lambda: _default_start_date())
+    end_date: str = field(default_factory=lambda: _default_end_date())
+    scale_meters: int = field(default_factory=lambda: int(os.getenv("INGESTION_SCALE_METERS", "10")))
+    region_bbox: tuple[float, float, float, float] = field(
+        default_factory=lambda: _parse_bbox(os.getenv("INGESTION_REGION_BBOX", "73.55,20.05,74.25,21.10"))
+    )
+    region_geojson_path: str | None = field(default_factory=lambda: os.getenv("INGESTION_REGION_GEOJSON"))
+    region_polygon: list[list[float]] | None = None
+    gee_project: str | None = field(default_factory=lambda: os.getenv("GEE_PROJECT"))
+    gee_service_account: str | None = field(default_factory=lambda: os.getenv("GEE_SERVICE_ACCOUNT"))
+    gee_private_key_file: str | None = field(default_factory=lambda: os.getenv("GEE_PRIVATE_KEY_FILE"))
+    interactive_auth: bool = field(
+        default_factory=lambda: os.getenv("INGESTION_INTERACTIVE_AUTH", "false").lower() == "true"
+    )
+    output_name: str = field(default_factory=lambda: os.getenv("INGESTION_S1_OUTPUT_NAME", "sentinel1_composite.tif"))
+    output_dir: Path = field(default_factory=lambda: _default_output_dir())
+    polarizations: tuple[str, ...] = field(
+        default_factory=lambda: _parse_bands(os.getenv("INGESTION_S1_POLARIZATIONS", "VV,VH"))
+    )
+    instrument_mode: str = field(default_factory=lambda: os.getenv("INGESTION_S1_INSTRUMENT_MODE", "IW"))
+    orbit_pass: str = field(default_factory=lambda: os.getenv("INGESTION_S1_ORBIT_PASS", "ANY"))
 
-    def __init__(self, config: IngestionConfig | None = None) -> None:
-        self.config = config or IngestionConfig()
+    def validate(self) -> None:
+        try:
+            date.fromisoformat(self.start_date)
+            date.fromisoformat(self.end_date)
+        except ValueError as exc:
+            raise ValueError("start_date and end_date must be ISO format: YYYY-MM-DD") from exc
+
+        if self.start_date > self.end_date:
+            raise ValueError("start_date cannot be later than end_date")
+
+        if self.scale_meters <= 0:
+            raise ValueError("scale_meters must be > 0")
+
+        if len(self.polarizations) == 0:
+            raise ValueError("polarizations cannot be empty")
+
+        normalized_orbit = self.orbit_pass.upper()
+        if normalized_orbit not in {"ANY", "ASCENDING", "DESCENDING"}:
+            raise ValueError("orbit_pass must be one of ANY, ASCENDING, DESCENDING")
+
+        if self.region_polygon is not None:
+            if len(self.region_polygon) < 3:
+                raise ValueError("region_polygon must contain at least 3 points")
+            for point in self.region_polygon:
+                if len(point) != 2:
+                    raise ValueError("Each region polygon point must contain [lon, lat]")
+
+
+class _EarthEngineDownloaderBase:
+    def __init__(self, config: IngestionConfig | Sentinel1IngestionConfig) -> None:
+        self.config = config
         self.config.validate()
 
     def initialize_earth_engine(self) -> None:
@@ -108,6 +158,42 @@ class Sentinel2Downloader:
         min_lon, min_lat, max_lon, max_lat = self.config.region_bbox
         return ee.Geometry.BBox(min_lon, min_lat, max_lon, max_lat)
 
+    def _download_composite_image(self, image: Any, region: Any, output_path: Path) -> None:
+        download_url = image.getDownloadURL(
+            {
+                "name": output_path.stem,
+                "format": "GEO_TIFF",
+                "region": region.getInfo()["coordinates"],
+                "crs": "EPSG:4326",
+                "scale": self.config.scale_meters,
+            }
+        )
+        _download_file(download_url, output_path)
+
+    def _write_metadata(self, output_path: Path, dataset_name: str, extra: dict[str, Any] | None = None) -> None:
+        metadata = {
+            "dataset": dataset_name,
+            "start_date": self.config.start_date,
+            "end_date": self.config.end_date,
+            "scale_meters": self.config.scale_meters,
+            "region_bbox": list(self.config.region_bbox),
+            "region_polygon": self.config.region_polygon,
+            "output_file": str(output_path),
+        }
+        if extra:
+            metadata.update(extra)
+        output_path.with_suffix(".metadata.json").write_text(
+            json.dumps(metadata, indent=2),
+            encoding="utf-8",
+        )
+
+
+class Sentinel2Downloader(_EarthEngineDownloaderBase):
+    """Downloads Sentinel-2 composite imagery from Google Earth Engine."""
+
+    def __init__(self, config: IngestionConfig | None = None) -> None:
+        super().__init__(config or IngestionConfig())
+
     def build_collection(self, region: Any) -> Any:
         ee = _import_ee()
         collection = (
@@ -132,36 +218,70 @@ class Sentinel2Downloader:
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / self.config.output_name
 
-        download_url = composite.getDownloadURL(
-            {
-                "name": output_path.stem,
-                "format": "GEO_TIFF",
-                "region": region.getInfo()["coordinates"],
-                "crs": "EPSG:4326",
-                "scale": self.config.scale_meters,
-            }
+        self._download_composite_image(composite, region, output_path)
+        self._write_metadata(
+            output_path,
+            dataset_name="COPERNICUS/S2_SR_HARMONIZED",
+            extra={
+                "max_cloud_pct": self.config.max_cloud_pct,
+                "bands": list(self.config.bands),
+            },
         )
-
-        _download_file(download_url, output_path)
-        self._write_metadata(output_path)
         return output_path
 
-    def _write_metadata(self, output_path: Path) -> None:
-        metadata = {
-            "dataset": "COPERNICUS/S2_SR_HARMONIZED",
-            "start_date": self.config.start_date,
-            "end_date": self.config.end_date,
-            "max_cloud_pct": self.config.max_cloud_pct,
-            "scale_meters": self.config.scale_meters,
-            "bands": list(self.config.bands),
-            "region_bbox": list(self.config.region_bbox),
-            "region_polygon": self.config.region_polygon,
-            "output_file": str(output_path),
-        }
-        output_path.with_suffix(".metadata.json").write_text(
-            json.dumps(metadata, indent=2),
-            encoding="utf-8",
+
+class Sentinel1Downloader(_EarthEngineDownloaderBase):
+    """Downloads Sentinel-1 SAR composite imagery from Google Earth Engine."""
+
+    def __init__(self, config: Sentinel1IngestionConfig | None = None) -> None:
+        super().__init__(config or Sentinel1IngestionConfig())
+
+    def build_collection(self, region: Any) -> Any:
+        ee = _import_ee()
+
+        collection = (
+            ee.ImageCollection("COPERNICUS/S1_GRD")
+            .filterDate(self.config.start_date, self.config.end_date)
+            .filterBounds(region)
+            .filter(ee.Filter.eq("instrumentMode", self.config.instrument_mode))
         )
+
+        for polarization in self.config.polarizations:
+            collection = collection.filter(
+                ee.Filter.listContains("transmitterReceiverPolarisation", polarization)
+            )
+
+        orbit_pass = self.config.orbit_pass.upper()
+        if orbit_pass in {"ASCENDING", "DESCENDING"}:
+            collection = collection.filter(ee.Filter.eq("orbitProperties_pass", orbit_pass))
+
+        return collection
+
+    def build_composite(self, region: Any) -> Any:
+        collection = self.build_collection(region)
+        selected = collection.select(list(self.config.polarizations))
+        return selected.median().clip(region)
+
+    def download_composite(self) -> Path:
+        self.initialize_earth_engine()
+        region = self.build_region()
+        composite = self.build_composite(region)
+
+        output_dir = self.config.output_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / self.config.output_name
+
+        self._download_composite_image(composite, region, output_path)
+        self._write_metadata(
+            output_path,
+            dataset_name="COPERNICUS/S1_GRD",
+            extra={
+                "polarizations": list(self.config.polarizations),
+                "instrument_mode": self.config.instrument_mode,
+                "orbit_pass": self.config.orbit_pass,
+            },
+        )
+        return output_path
 
 
 def _default_output_dir() -> Path:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from typing import Any
 
 from sqlalchemy import text
@@ -31,6 +32,7 @@ class ForestMetricsService:
 
         self.ml = MLBridge.get_instance()
         self.region_pipeline = RegionPipelineService()
+        self.demo_cache_enabled = os.getenv("DEMO_CACHE_ENABLED", "true").lower() == "true"
 
     def _prepare_region_data(self, polygon: list[list[float]]) -> None:
         try:
@@ -65,9 +67,54 @@ class ForestMetricsService:
     def _area_km2(self, polygon: list[list[float]]) -> float:
         return round(max(len(polygon) - 2, 1) * 0.85, 2)
 
+    def _get_demo_cached_forest_metrics(
+        self,
+        polygon: list[list[float]],
+    ) -> ForestMetricsResponse | None:
+        row = self._fetch_one(
+            """
+            SELECT response
+            FROM demo_polygon_cache
+            WHERE ST_Equals(polygon, json_polygon_to_geom(CAST(:polygon AS jsonb)))
+            LIMIT 1
+            """,
+            {"polygon": json.dumps(polygon)},
+        )
+        if not row:
+            return None
+
+        payload = row.get("response")
+        if not isinstance(payload, dict):
+            return None
+
+        species_distribution = payload.get("species_distribution") or {}
+        if not isinstance(species_distribution, dict):
+            species_distribution = {}
+
+        normalized_species_distribution = {
+            "teak": float(species_distribution.get("teak") or 0),
+            "bamboo": float(species_distribution.get("bamboo") or 0),
+            "mixed_deciduous": float(species_distribution.get("mixed_deciduous") or 0),
+        }
+
+        return ForestMetricsResponse(
+            area_km2=float(payload.get("area_km2") or 0),
+            tree_count=int(round(float(payload.get("tree_count") or 0))),
+            tree_density=float(payload.get("tree_density") or 0),
+            health_score=float(payload.get("health_score") or 0),
+            risk_level=str(payload.get("risk_level") or "Low"),
+            species_distribution=normalized_species_distribution,
+            forecast_health=float(payload.get("forecast_health") or 0),
+        )
+
     # ── /forest-metrics ──────────────────────────────────────────────────
 
     def get_forest_metrics(self, polygon: list[list[float]]) -> ForestMetricsResponse:
+        if self.demo_cache_enabled:
+            demo_cached = self._get_demo_cached_forest_metrics(polygon)
+            if demo_cached is not None:
+                return demo_cached
+
         self._prepare_region_data(polygon)
 
         row = self._fetch_one(
@@ -81,15 +128,19 @@ class ForestMetricsService:
             species_distribution = row.get("species_distribution") or {}
             if not isinstance(species_distribution, dict):
                 species_distribution = {}
+            normalized_species_distribution = {
+                "teak": float(species_distribution.get("teak") or 0),
+                "bamboo": float(species_distribution.get("bamboo") or 0),
+                "mixed_deciduous": float(species_distribution.get("mixed_deciduous") or 0),
+            }
             return ForestMetricsResponse(
                 area_km2=float(row.get("area_km2") or 0),
                 tree_count=int(round(float(row.get("tree_count") or 0))),
                 tree_density=float(row.get("tree_density") or 0),
                 health_score=float(row.get("health_score") or 0),
                 risk_level=str(row.get("risk_level") or "Low"),
-                species_distribution={
-                    key: float(value) for key, value in species_distribution.items()
-                },
+                species_distribution=normalized_species_distribution,
+                forecast_health=float(row.get("forecast_health") or 0),
             )
 
         # ── ML fallback ──────────────────────────────────────────────────
@@ -99,6 +150,8 @@ class ForestMetricsService:
         health_score = float(self.ml.compute_health())
         risk_raw = self.ml.detect_risk()
         risk_level = self.ml.classify_risk_level(risk_raw)
+        forecast_points = self.ml.forecast_as_monthly_points()
+        forecast_health = float(forecast_points[0]["health_score"]) if forecast_points else health_score
 
         return ForestMetricsResponse(
             area_km2=area_km2,
@@ -106,7 +159,8 @@ class ForestMetricsService:
             tree_density=tree_density,
             health_score=health_score,
             risk_level=risk_level,
-            species_distribution={"teak": 58.0, "bamboo": 27.0, "mixed": 15.0},
+            species_distribution={"teak": 58.0, "bamboo": 27.0, "mixed_deciduous": 15.0},
+            forecast_health=forecast_health,
         )
 
     # ── /tree-density ────────────────────────────────────────────────────

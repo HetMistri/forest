@@ -34,6 +34,11 @@ class FeatureRecord:
     max_lat: float
     ndvi: float
     ndmi: float
+    evi: float | None
+    vv: float | None
+    vh: float | None
+    vv_vh_ratio: float | None
+    ndvi_trend: float | None
     source: str
     captured_at: datetime
 
@@ -57,10 +62,15 @@ class PostgresFeatureStore:
                 ST_MakeEnvelope(:min_lon, :min_lat, :max_lon, :max_lat, 4326),
                 :ndvi,
                 :ndmi,
-                NULL,
+                :sar_ratio,
                 NULL,
                 :source,
-                :captured_at
+                :captured_at,
+                :evi,
+                :vv,
+                :vh,
+                :vv_vh_ratio,
+                :ndvi_trend
             )
             """
         )
@@ -77,6 +87,12 @@ class PostgresFeatureStore:
                         "max_lat": row.max_lat,
                         "ndvi": row.ndvi,
                         "ndmi": row.ndmi,
+                        "sar_ratio": row.vv_vh_ratio,
+                        "evi": row.evi,
+                        "vv": row.vv,
+                        "vh": row.vh,
+                        "vv_vh_ratio": row.vv_vh_ratio,
+                        "ndvi_trend": row.ndvi_trend,
                         "source": row.source,
                         "captured_at": row.captured_at,
                     },

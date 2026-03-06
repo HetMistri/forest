@@ -7,8 +7,13 @@ import calendar
 from datetime import date, datetime, timezone
 
 from features.extractor import FeatureExtractor, FeatureExtractorConfig
-from ingestion.downloader import IngestionConfig, Sentinel2Downloader
-from processing.preprocess import PreprocessConfig, Sentinel2Preprocessor
+from ingestion.downloader import (
+    IngestionConfig,
+    Sentinel1Downloader,
+    Sentinel1IngestionConfig,
+    Sentinel2Downloader,
+)
+from processing.preprocess import PreprocessConfig, Sentinel1Preprocessor, Sentinel2Preprocessor
 
 
 class RegionPipelineService:
@@ -42,25 +47,49 @@ class RegionPipelineService:
         start_date = self._subtract_months(now.date(), int(os.getenv("INGESTION_LOOKBACK_MONTHS", "6"))).isoformat()
 
         run_id = self._build_run_id(polygon)
-        source_filename = f"sentinel2_{run_id}.tif"
+        source_filename_s2 = f"sentinel2_{run_id}.tif"
+        source_filename_s1 = f"sentinel1_{run_id}.tif"
         ndvi_filename = f"ndvi_{run_id}.tif"
         ndmi_filename = f"ndmi_{run_id}.tif"
+        evi_filename = f"evi_{run_id}.tif"
+        vv_filename = f"vv_{run_id}.tif"
+        vh_filename = f"vh_{run_id}.tif"
+        vv_vh_ratio_filename = f"vv_vh_ratio_{run_id}.tif"
         features_csv = f"features_{run_id}.csv"
 
-        ingestion = Sentinel2Downloader(
+        ingestion_s2 = Sentinel2Downloader(
             IngestionConfig(
                 start_date=start_date,
                 end_date=end_date,
                 region_polygon=polygon,
-                output_name=source_filename,
+                output_name=source_filename_s2,
             )
         ).download_composite()
 
-        processing = Sentinel2Preprocessor(
+        ingestion_s1 = Sentinel1Downloader(
+            Sentinel1IngestionConfig(
+                start_date=start_date,
+                end_date=end_date,
+                region_polygon=polygon,
+                output_name=source_filename_s1,
+            )
+        ).download_composite()
+
+        processing_s2 = Sentinel2Preprocessor(
             PreprocessConfig(
-                input_filename=source_filename,
+                input_filename=source_filename_s2,
                 ndvi_filename=ndvi_filename,
                 ndmi_filename=ndmi_filename,
+                evi_filename=evi_filename,
+            )
+        ).run()
+
+        processing_s1 = Sentinel1Preprocessor(
+            PreprocessConfig(
+                sentinel1_input_filename=source_filename_s1,
+                vv_filename=vv_filename,
+                vh_filename=vh_filename,
+                vv_vh_ratio_filename=vv_vh_ratio_filename,
             )
         ).run()
 
@@ -69,8 +98,12 @@ class RegionPipelineService:
             FeatureExtractorConfig(
                 ndvi_filename=ndvi_filename,
                 ndmi_filename=ndmi_filename,
+                evi_filename=evi_filename,
+                vv_filename=vv_filename,
+                vh_filename=vh_filename,
+                vv_vh_ratio_filename=vv_vh_ratio_filename,
                 output_csv=features_csv,
-                source_name=f"sentinel2:{run_id}",
+                source_name=f"sentinel-fusion:{run_id}",
                 timestamp_utc=captured_at,
                 write_to_db=True,
                 grid_prefix=run_id,
@@ -82,8 +115,14 @@ class RegionPipelineService:
             "run_id": run_id,
             "start_date": start_date,
             "end_date": end_date,
-            "ingestion_output": str(ingestion),
-            "processing": processing,
+            "ingestion": {
+                "sentinel2": str(ingestion_s2),
+                "sentinel1": str(ingestion_s1),
+            },
+            "processing": {
+                "sentinel2": processing_s2,
+                "sentinel1": processing_s1,
+            },
             "extraction": extraction,
         }
 

@@ -25,6 +25,11 @@ CREATE TABLE IF NOT EXISTS forest_features (
     geometry GEOMETRY(POLYGON, 4326) NOT NULL,
     ndvi DOUBLE PRECISION NOT NULL,
     ndmi DOUBLE PRECISION NOT NULL,
+    evi DOUBLE PRECISION,
+    vv DOUBLE PRECISION,
+    vh DOUBLE PRECISION,
+    vv_vh_ratio DOUBLE PRECISION,
+    ndvi_trend DOUBLE PRECISION,
     sar_ratio DOUBLE PRECISION,
     vegetation_variance DOUBLE PRECISION,
     source TEXT DEFAULT 'sentinel',
@@ -32,8 +37,15 @@ CREATE TABLE IF NOT EXISTS forest_features (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     CONSTRAINT chk_features_ndvi_range CHECK (ndvi BETWEEN -1.0 AND 1.0),
-    CONSTRAINT chk_features_ndmi_range CHECK (ndmi BETWEEN -1.0 AND 1.0)
+    CONSTRAINT chk_features_ndmi_range CHECK (ndmi BETWEEN -1.0 AND 1.0),
+    CONSTRAINT chk_features_evi_range CHECK (evi IS NULL OR evi BETWEEN -1.0 AND 1.0)
 );
+
+ALTER TABLE forest_features ADD COLUMN IF NOT EXISTS evi DOUBLE PRECISION;
+ALTER TABLE forest_features ADD COLUMN IF NOT EXISTS vv DOUBLE PRECISION;
+ALTER TABLE forest_features ADD COLUMN IF NOT EXISTS vh DOUBLE PRECISION;
+ALTER TABLE forest_features ADD COLUMN IF NOT EXISTS vv_vh_ratio DOUBLE PRECISION;
+ALTER TABLE forest_features ADD COLUMN IF NOT EXISTS ndvi_trend DOUBLE PRECISION;
 
 CREATE TABLE IF NOT EXISTS species_composition (
     grid_id TEXT PRIMARY KEY REFERENCES forest_features(grid_id) ON DELETE CASCADE,
@@ -153,19 +165,41 @@ CREATE OR REPLACE FUNCTION upsert_forest_feature(
     p_sar_ratio DOUBLE PRECISION DEFAULT NULL,
     p_vegetation_variance DOUBLE PRECISION DEFAULT NULL,
     p_source TEXT DEFAULT 'sentinel',
-    p_captured_at TIMESTAMPTZ DEFAULT NOW()
+    p_captured_at TIMESTAMPTZ DEFAULT NOW(),
+    p_evi DOUBLE PRECISION DEFAULT NULL,
+    p_vv DOUBLE PRECISION DEFAULT NULL,
+    p_vh DOUBLE PRECISION DEFAULT NULL,
+    p_vv_vh_ratio DOUBLE PRECISION DEFAULT NULL,
+    p_ndvi_trend DOUBLE PRECISION DEFAULT NULL
 )
 RETURNS VOID AS $$
 BEGIN
     INSERT INTO forest_features (
-        grid_id, geometry, ndvi, ndmi, sar_ratio, vegetation_variance, source, captured_at
+        grid_id,
+        geometry,
+        ndvi,
+        ndmi,
+        evi,
+        vv,
+        vh,
+        vv_vh_ratio,
+        ndvi_trend,
+        sar_ratio,
+        vegetation_variance,
+        source,
+        captured_at
     )
     VALUES (
         p_grid_id,
         ST_SetSRID(p_geometry, 4326),
         p_ndvi,
         p_ndmi,
-        p_sar_ratio,
+        p_evi,
+        p_vv,
+        p_vh,
+        p_vv_vh_ratio,
+        p_ndvi_trend,
+        COALESCE(p_sar_ratio, p_vv_vh_ratio),
         p_vegetation_variance,
         p_source,
         p_captured_at
@@ -175,6 +209,11 @@ BEGIN
         geometry = EXCLUDED.geometry,
         ndvi = EXCLUDED.ndvi,
         ndmi = EXCLUDED.ndmi,
+        evi = EXCLUDED.evi,
+        vv = EXCLUDED.vv,
+        vh = EXCLUDED.vh,
+        vv_vh_ratio = EXCLUDED.vv_vh_ratio,
+        ndvi_trend = EXCLUDED.ndvi_trend,
         sar_ratio = EXCLUDED.sar_ratio,
         vegetation_variance = EXCLUDED.vegetation_variance,
         source = EXCLUDED.source,
