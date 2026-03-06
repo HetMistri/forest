@@ -67,6 +67,7 @@ class MLBridge:
         Falls back to 162.0 if model is not loaded.
         """
         if not self.model_loaded or self._model is None:
+            logger.warning("Density prediction using fallback constant: model not loaded")
             return 162.0
 
         try:
@@ -75,7 +76,17 @@ class MLBridge:
             )
             prediction = float(self._model.predict(features)[0])
             # Clamp to realistic range
-            return max(0.0, min(500.0, round(prediction, 2)))
+            clamped = max(0.0, min(500.0, round(prediction, 2)))
+            logger.info(
+                "Density prediction succeeded (ndvi=%.3f, ndmi=%.3f, vv=%.3f, vh=%.3f, sar_ratio=%.3f, density=%.2f)",
+                ndvi,
+                ndmi,
+                vv,
+                vh,
+                sar_ratio,
+                clamped,
+            )
+            return clamped
         except Exception as exc:
             logger.warning("Density prediction failed: %s", exc)
             return 162.0
@@ -96,7 +107,9 @@ class MLBridge:
         try:
             from .ml.health_and_risk import calculate_health_score
 
-            return calculate_health_score(ndvi, ndmi)
+            score = calculate_health_score(ndvi, ndmi)
+            logger.info("Health score computed (ndvi=%.3f, ndmi=%.3f, score=%s)", ndvi, ndmi, score)
+            return score
         except Exception as exc:
             logger.warning("Health score computation failed: %s", exc)
             return 68
@@ -115,7 +128,9 @@ class MLBridge:
         try:
             from .ml.health_and_risk import detect_deforestation_risk
 
-            return detect_deforestation_risk(historical_ndvi)
+            risk = detect_deforestation_risk(historical_ndvi)
+            logger.info("Risk detection computed (samples=%d, risk=%s)", len(historical_ndvi), risk)
+            return risk
         except Exception as exc:
             logger.warning("Risk detection failed: %s", exc)
             return "Risk: LOW"
@@ -139,7 +154,9 @@ class MLBridge:
         try:
             from .ml.forecast import predict_future_health
 
-            return predict_future_health(historical_df)
+            forecast = predict_future_health(historical_df)
+            logger.info("Health forecast computed (points=%d)", len(forecast))
+            return forecast
         except Exception as exc:
             logger.warning("Forecast failed: %s", exc)
             return [66, 65, 64, 63, 62, 61]
@@ -178,7 +195,9 @@ class MLBridge:
 
     def get_status(self) -> dict[str, Any]:
         """Return ML subsystem status for the /system-status endpoint."""
-        return {
+        status = {
             "model_loaded": self.model_loaded,
             "model_type": type(self._model).__name__ if self._model else "none",
         }
+        logger.info("ML status requested: %s", status)
+        return status

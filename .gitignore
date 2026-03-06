@@ -43,6 +43,7 @@ dist/
 frontend/node_modules/
 frontend/dist/
 frontend/dist-ssr/
+frontend/.next/
 
 # data
 data/

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import calendar
 from datetime import date, datetime, timezone
+from time import perf_counter
 
 from features.extractor import FeatureExtractor, FeatureExtractorConfig
 from ingestion.downloader import (
@@ -14,6 +16,8 @@ from ingestion.downloader import (
     Sentinel2Downloader,
 )
 from processing.preprocess import PreprocessConfig, Sentinel1Preprocessor, Sentinel2Preprocessor
+
+logger = logging.getLogger(__name__)
 
 
 class RegionPipelineService:
@@ -25,6 +29,7 @@ class RegionPipelineService:
 
     def run_for_polygon(self, polygon: list[list[float]]) -> dict[str, object]:
         if not self.enabled:
+            logger.info("Region pipeline skipped: disabled by REGION_PIPELINE_ENABLED")
             return {"enabled": False, "skipped": True}
 
         polygon_key = self._polygon_key(polygon)
@@ -33,6 +38,11 @@ class RegionPipelineService:
         if last_run is not None:
             elapsed = (now - last_run).total_seconds()
             if elapsed < self.min_interval_seconds:
+                logger.info(
+                    "Region pipeline skipped: recently processed polygon (elapsed=%.3fs, min_interval=%ss)",
+                    elapsed,
+                    self.min_interval_seconds,
+                )
                 return {
                     "enabled": True,
                     "skipped": True,
@@ -47,6 +57,14 @@ class RegionPipelineService:
         start_date = self._subtract_months(now.date(), int(os.getenv("INGESTION_LOOKBACK_MONTHS", "6"))).isoformat()
 
         run_id = self._build_run_id(polygon)
+        logger.info(
+            "Region pipeline started (run_id=%s, polygon_points=%d, lookback_start=%s, lookback_end=%s)",
+            run_id,
+            len(polygon),
+            start_date,
+            end_date,
+        )
+        pipeline_started = perf_counter()
         source_filename_s2 = f"sentinel2_{run_id}.tif"
         source_filename_s1 = f"sentinel1_{run_id}.tif"
         ndvi_filename = f"ndvi_{run_id}.tif"
@@ -57,6 +75,7 @@ class RegionPipelineService:
         vv_vh_ratio_filename = f"vv_vh_ratio_{run_id}.tif"
         features_csv = f"features_{run_id}.csv"
 
+        ingestion_started = perf_counter()
         ingestion_s2 = Sentinel2Downloader(
             IngestionConfig(
                 start_date=start_date,
@@ -65,7 +84,14 @@ class RegionPipelineService:
                 output_name=source_filename_s2,
             )
         ).download_composite()
+        logger.info(
+            "Sentinel-2 ingestion completed (run_id=%s, output=%s, duration_ms=%.1f)",
+            run_id,
+            ingestion_s2,
+            (perf_counter() - ingestion_started) * 1000,
+        )
 
+        ingestion_started = perf_counter()
         ingestion_s1 = Sentinel1Downloader(
             Sentinel1IngestionConfig(
                 start_date=start_date,
@@ -74,7 +100,14 @@ class RegionPipelineService:
                 output_name=source_filename_s1,
             )
         ).download_composite()
+        logger.info(
+            "Sentinel-1 ingestion completed (run_id=%s, output=%s, duration_ms=%.1f)",
+            run_id,
+            ingestion_s1,
+            (perf_counter() - ingestion_started) * 1000,
+        )
 
+        processing_started = perf_counter()
         processing_s2 = Sentinel2Preprocessor(
             PreprocessConfig(
                 input_filename=source_filename_s2,
@@ -83,7 +116,14 @@ class RegionPipelineService:
                 evi_filename=evi_filename,
             )
         ).run()
+        logger.info(
+            "Sentinel-2 preprocessing completed (run_id=%s, outputs=%s, duration_ms=%.1f)",
+            run_id,
+            processing_s2,
+            (perf_counter() - processing_started) * 1000,
+        )
 
+        processing_started = perf_counter()
         processing_s1 = Sentinel1Preprocessor(
             PreprocessConfig(
                 sentinel1_input_filename=source_filename_s1,
@@ -92,8 +132,15 @@ class RegionPipelineService:
                 vv_vh_ratio_filename=vv_vh_ratio_filename,
             )
         ).run()
+        logger.info(
+            "Sentinel-1 preprocessing completed (run_id=%s, outputs=%s, duration_ms=%.1f)",
+            run_id,
+            processing_s1,
+            (perf_counter() - processing_started) * 1000,
+        )
 
         captured_at = datetime.now(timezone.utc)
+        extraction_started = perf_counter()
         extraction = FeatureExtractor(
             FeatureExtractorConfig(
                 ndvi_filename=ndvi_filename,
@@ -109,6 +156,18 @@ class RegionPipelineService:
                 grid_prefix=run_id,
             )
         ).run()
+        logger.info(
+            "Feature extraction completed (run_id=%s, rows_generated=%s, rows_inserted=%s, duration_ms=%.1f)",
+            run_id,
+            extraction.get("rows_generated"),
+            extraction.get("rows_inserted"),
+            (perf_counter() - extraction_started) * 1000,
+        )
+        logger.info(
+            "Region pipeline completed (run_id=%s, total_duration_ms=%.1f)",
+            run_id,
+            (perf_counter() - pipeline_started) * 1000,
+        )
 
         return {
             "enabled": True,

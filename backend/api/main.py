@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -9,6 +10,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
 from .db import check_db_connection
+
+if not logging.getLogger().handlers:
+    logging.basicConfig(
+        level=os.getenv("LOG_LEVEL", "INFO").upper(),
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    )
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
