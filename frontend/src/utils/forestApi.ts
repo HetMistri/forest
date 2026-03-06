@@ -1,4 +1,4 @@
-const BASE = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '');
+const BASE = (import.meta.env.VITE_API_BASE_URL || "/api").replace(/\/$/, "");
 
 export interface PolygonRequest {
   polygon: [number, number][];
@@ -63,8 +63,8 @@ export interface DemoMetricsResponse {
 
 async function post<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`API ${path} failed: ${res.status}`);
@@ -80,29 +80,29 @@ async function get<T>(path: string): Promise<T> {
 export const forestApi = {
   // Core analysis
   getForestMetrics: (polygon: [number, number][]) =>
-    post<ForestMetricsResponse>('/forest-metrics', { polygon }),
+    post<ForestMetricsResponse>("/forest-metrics", { polygon }),
 
   // Specific analytics
   getTreeDensity: (polygon: [number, number][]) =>
-    post<TreeDensityResponse>('/tree-density', { polygon }),
+    post<TreeDensityResponse>("/tree-density", { polygon }),
 
   getHealthScore: (polygon: [number, number][]) =>
-    post<HealthScoreResponse>('/health-score', { polygon }),
+    post<HealthScoreResponse>("/health-score", { polygon }),
 
   getRiskAlerts: (polygon: [number, number][]) =>
-    post<RiskAlertsResponse>('/risk-alerts', { polygon }),
+    post<RiskAlertsResponse>("/risk-alerts", { polygon }),
 
   getSpeciesComposition: (polygon: [number, number][]) =>
-    post<SpeciesCompositionResponse>('/species-composition', { polygon }),
+    post<SpeciesCompositionResponse>("/species-composition", { polygon }),
 
   getHealthForecast: (polygon: [number, number][]) =>
-    post<HealthForecastResponse>('/health-forecast', { polygon }),
+    post<HealthForecastResponse>("/health-forecast", { polygon }),
 
   // Layer endpoints
-  getNDVIMap: () => get<NDVIMapResponse>('/ndvi-map'),
-  getRiskZones: () => get<RiskZonesResponse>('/risk-zones'),
+  getNDVIMap: () => get<NDVIMapResponse>("/ndvi-map"),
+  getRiskZones: () => get<RiskZonesResponse>("/risk-zones"),
 
   // Utility
-  getSystemStatus: () => get<SystemStatusResponse>('/system-status'),
-  getDemoMetrics: () => get<DemoMetricsResponse>('/demo-metrics'),
+  getSystemStatus: () => get<SystemStatusResponse>("/system-status"),
+  getDemoMetrics: () => get<DemoMetricsResponse>("/demo-metrics"),
 };
