@@ -26,6 +26,12 @@ def test_forest_metrics_contract_shape() -> None:
         "health_score",
         "risk_level",
         "species_distribution",
+        "forecast_health",
+    }
+    assert set(payload["species_distribution"].keys()) == {
+        "teak",
+        "bamboo",
+        "mixed_deciduous",
     }
 
 

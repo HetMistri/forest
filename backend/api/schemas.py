@@ -36,6 +36,7 @@ class ForestMetricsResponse(BaseModel):
     health_score: float
     risk_level: str
     species_distribution: dict[str, float]
+    forecast_health: float
 
 
 class TreeDensityResponse(BaseModel):

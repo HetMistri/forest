@@ -1,264 +1,420 @@
-# Forest Intelligence Platform — Backend + Data Pipeline Plan
+# Forest Intelligence Platform — Backend + Data Pipeline Master Plan (Dang District)
 
-Owner: Backend Engineer (also Data & ML Pipeline)
-Scope: Deliver reliable polygon-based forest analytics for Dang district with production-safe demo behavior.
-git 
-## 1) Goals and Non-Negotiables
+Owner: Backend + Data/ML team  
+Scope: Backend services, geospatial database, and satellite-to-metrics pipeline only.  
+Out of scope here: frontend implementation details except API dependencies.
 
-### Primary Goal
-Enable a live flow where a user draws/selects a polygon and receives instant analytics:
-- tree_count
-- tree_density
-- health_score
-- risk_level
-- species_distribution
+---
 
-### Fixed Core Contract (lock first)
-Endpoint: POST /forest-metrics
+## 1) Mission and Technical Differentiator
 
-Request
+### Mission
+
+Deliver reliable forest intelligence for Dang district from polygon input:
+
+- tree density and total tree count
+- forest health score
+- deforestation risk alerts
+- ecosystem composition
+- 6-month health forecast
+
+### Core Differentiator
+
+Fuse optical + radar satellite signals for all-weather monitoring:
+
+- Sentinel-2 (optical): NDVI, NDMI, EVI
+- Sentinel-1 (SAR): VV, VH, VV/VH ratio
+
+This removes dependence on clear-sky-only optical imagery and improves monsoon robustness.
+
+---
+
+## 2) Current Project Analysis (Backend + Pipeline)
+
+### What is already implemented
+
+1. FastAPI surface is in place with routers for:
+
+- POST /forest-metrics
+- POST /tree-density
+- POST /health-score
+- POST /risk-alerts
+- POST /species-composition
+- POST /health-forecast
+- GET /ndvi-map
+- GET /risk-zones
+- GET /system-status
+- GET /demo-metrics
+
+2. API schemas enforce strict payloads and `[lon, lat]` polygon format.
+
+3. Postgres/PostGIS bootstrap exists with:
+
+- `forest_features`, `forest_metrics`, `species_composition`, `risk_alerts`, `demo_polygon_cache`
+- spatial indexes + helper SQL functions (`get_forest_metrics`, `get_health_score`, etc.)
+
+4. Polygon analytics flow exists:
+
+- API -> `ForestMetricsService` -> SQL function aggregation -> JSON response
+- DB fallback to ML/hardcoded defaults is present
+
+5. Data pipeline components exist:
+
+- Sentinel-2 downloader via Earth Engine
+- NDVI/NDMI preprocessing
+- feature extraction from rasters to grid cells and DB upsert
+
+6. ML bridge exists:
+
+- tree density inference (RandomForest model loading supported)
+- health score, risk detection, forecast helper methods
+
+7. Automated tests exist for API contracts and ML integration.
+
+### Critical gaps vs final target system
+
+1. Sentinel-1 ingestion is not yet implemented in ingestion pipeline.
+2. EVI is not yet computed/stored in processing/features.
+3. Feature table is not yet fully aligned with final fused schema (NDVI trend + SAR fields in serving path).
+4. Health scoring weights in current ML helper are 0.7/0.3; final target is 0.6/0.4.
+5. Region pipeline currently runs synchronously inside request flow; this can hurt API latency.
+6. `species_distribution` key naming in fallback path is inconsistent (`mixed` vs `mixed_deciduous`).
+7. Forecast serving currently relies on fallback/simple monthly projection if DB history is limited.
+
+---
+
+## 3) Final Target Backend System (Authoritative)
+
+### Main analysis endpoint (core)
+
+POST /forest-metrics
+
+Request:
 {
-  "polygon": [[lon, lat], [lon, lat], ...]
+"polygon": [[lon, lat], [lon, lat], ...]
 }
 
-Response
+Response:
 {
-  "area_km2": 5.1,
-  "tree_count": 84200,
-  "tree_density": 162,
-  "health_score": 68,
-  "risk_level": "Moderate",
-  "species_distribution": {
-    "teak": 58,
-    "bamboo": 27,
-    "mixed_deciduous": 15
-  }
+"area_km2": 5.1,
+"tree_count": 84200,
+"tree_density": 162,
+"health_score": 68,
+"risk_level": "Moderate",
+"species_distribution": {
+"teak": 58,
+"bamboo": 27,
+"mixed_deciduous": 15
+},
+"forecast_health": 64
 }
 
-### Guardrails
-- Working product > new features.
-- Keep coordinate convention consistent: [lon, lat] across FE, API, DB.
-- No last-minute schema changes after integration freeze.
+### Full API map (target)
+
+- POST /forest-metrics
+- POST /tree-density
+- POST /health-score
+- POST /risk-alerts
+- POST /species-composition
+- POST /health-forecast
+- GET /ndvi-map
+- GET /risk-zones
+- GET /system-status
+- GET /demo-metrics
+
+### Primary frontend dependency
+
+- POST /forest-metrics
+- GET /ndvi-map
+- GET /risk-zones
 
 ---
 
-## 2) Architecture Responsibilities (Your Scope)
+## 4) Final Data Pipeline (Authoritative)
 
-### Data & ML Responsibilities
-- Ingest Sentinel-based raster inputs for Dang (NDVI, NDMI first).
-- Convert raster to hectare-level feature table.
-- Produce model metrics per grid cell:
-  - tree_density
-  - health_score
-  - risk_level
-  - optional forecast_health
-- Publish outputs in DB-ready format keyed by grid_id.
+### Stage A: Data ingestion (Earth Engine)
 
-### Backend Responsibilities
-- Maintain PostGIS schema + aggregation functions.
-- Build and harden API/service layer.
-- Support demo-cache fast path for pitch reliability.
-- Expose stable endpoints for frontend and integration tests.
+Inputs:
 
----
+- Sentinel-2 multispectral data (B4, B8, B11 + bands needed for EVI)
+- Sentinel-1 SAR data (VV, VH)
+- Dang district boundary (Bhuvan)
 
-## 3) Work Breakdown Structure (Backend + Data)
+Outputs:
 
-## Phase A — API Contract Lock + Repo Baseline (1–2 hours)
+- clipped, time-filtered optical and SAR rasters / data cubes for Dang
 
-Tasks
-- Freeze JSON contract for POST /forest-metrics.
-- Confirm polygon convention ([lon, lat]) in docs and schema validation.
-- Freeze supporting endpoint payload shapes.
+### Stage B: Feature processing (hectare blocks)
 
-Deliverables
-- Signed contract in backend README or API docs.
-- OpenAPI checked and shared with frontend.
+For each hectare block:
 
-Acceptance Criteria
-- Frontend can integrate without guessing fields.
-- No breaking contract changes afterward.
+- NDVI mean
+- NDVI trend (short historical window)
+- NDMI mean
+- EVI mean
+- VV mean
+- VH mean
+- VV/VH ratio
 
----
+Output dataset key:
 
-## Phase B — Data Ingestion (4 hours)
+- `grid_id`
 
-Inputs
-- Dang district boundary (Bhuvan/authoritative boundary source).
-- Satellite-derived layers (NDVI/NDMI raster exports).
+### Stage C: Tree density estimation
 
-Tasks
-- Prepare ingestion script structure under ingestion/.
-- Load boundary geometry and align CRS.
-- Validate raster bounds overlap Dang boundary.
-- Export/store raw layers under data/raw/.
+Model:
 
-Expected Artifacts
-- data/raw/ndvi.tif
-- data/raw/ndmi.tif
+- RandomForestRegressor
 
-Acceptance Criteria
-- Rasters readable, georeferenced, and clipped/usable for Dang.
-- Metadata logged (date range, source, CRS, resolution).
+Output:
 
----
+- `tree_density_per_hectare`
 
-## Phase C — Feature Extraction to Grid (4 hours)
+Derived metric:
 
-Tasks
-- Define hectare grid strategy and stable grid_id generation.
-- Compute grid-level features from raster:
-  - ndvi
-  - ndmi
-  - centroid lat/lon
-- Save features table for backend load.
+- `tree_count = tree_density_per_hectare * area_hectares`
 
-Expected Artifact
-- data/processed/features.csv
-  - grid_id, lat, lon, ndvi, ndmi
+### Stage D: Forest health score
 
-Acceptance Criteria
-- No null/invalid index values beyond expected sparse edges.
-- grid_id is deterministic across reruns.
+Scoring rule:
 
----
+- `health_score = (0.6 * NDVI + 0.4 * NDMI) * 100` (clamped 0..100)
 
-## Phase D — ML & Metric Generation (5–6 hours)
+Bands:
 
-Tasks
-- Tree Density Model
-  - Train/use RandomForestRegressor with ndvi/ndmi (+ optional SAR when available).
-- Health Scoring
-  - Apply: health = 0.6 * NDVI + 0.4 * NDMI.
-  - Scale to 0–100.
-- Risk Detection
-  - Flag high risk if NDVI drop > 25% in short window.
-- Forecast
-  - Prophet-based NDVI trend projection.
-- Export metrics keyed by grid_id.
+- 0–40 degraded
+- 40–70 moderate
+- 70–100 healthy
 
-Expected Artifact (DB-ready)
-- grid_id, tree_density, health_score, risk_level, forecast_health
+### Stage E: Risk detection
 
-Acceptance Criteria
-- Values constrained to expected ranges.
-- Repeatable inference output for same input snapshot.
+Rule:
+
+- NDVI drop > 25% over short period -> hotspot alert
+
+Output:
+
+- risk zones + severity labels for mapping
+
+### Stage F: Forecasting
+
+Model:
+
+- ARIMA or Prophet
+
+Input:
+
+- NDVI time series per region/block aggregate
+
+Output:
+
+- 6-month health projection
+
+### Stage G: Species composition integration (no satellite species detection)
+
+Source:
+
+- Forest Survey of India + Bhuvan ecological data
+
+Output format:
+{
+"teak": 58,
+"bamboo": 27,
+"mixed_deciduous": 15
+}
 
 ---
 
-## Phase E — Database Layer (3 hours)
+## 5) Backend Architecture and Data Contracts
 
-Tasks
-- Validate and finalize tables:
-  - forest_features (grid_id, geometry, ndvi, ndmi)
-  - forest_metrics (grid_id, tree_density, health_score, risk_level, forecast_health)
-- Ensure spatial indexes and helper SQL functions are working.
-- Implement idempotent upsert paths for feature/metric loads.
+### FastAPI router structure
 
-Acceptance Criteria
-- Polygon intersection queries run with acceptable latency.
-- Upserts can be rerun safely.
+```
+api/routers/
+  forest_metrics.py
+  density.py
+  health.py
+  risk.py
+  species.py
+  forecast.py
+  layers.py
+  system.py
+```
 
----
+### Service layer responsibilities
 
-## Phase F — Backend Services & Endpoints (4 hours)
+- `ForestMetricsService`: API orchestration and fallback policy
+- SQL functions: polygon aggregation and risk/species/forecast retrieval
+- region pipeline trigger: ingestion -> preprocess -> feature extract -> DB load
 
-Tasks
-- Finalize ForestMetricsService aggregation logic:
-  - polygon -> intersecting cells -> aggregate -> response
-- Validate supporting endpoints:
-  - POST /forest-metrics
-  - POST /tree-density
-  - POST /health-score
-  - POST /risk-alerts
-  - POST /species-composition
-  - GET /ndvi-map
-  - GET /risk-zones
-- Enforce response schema strictness.
+### Database contract (minimum)
 
-Acceptance Criteria
-- Endpoints return contract-compliant JSON.
-- Invalid polygon payloads fail with clear validation errors.
+`forest_features`
 
----
+- `grid_id`, `geometry`
+- `ndvi`, `ndmi`, `evi`
+- `vv`, `vh`, `vv_vh_ratio`
+- `captured_at`, `source`
 
-## Phase G — Demo Cache Reliability (1 hour)
+`forest_metrics`
 
-Tasks
-- Seed fixed demo polygon cache entry (Dang).
-- Add fast-path return for exact demo polygon match.
-- Ensure response matches pitch-safe values and is instantaneous.
+- `grid_id`, `geometry`
+- `tree_density`, `health_score`, `risk_level`, `forecast_health`
+- `metric_timestamp`, `model_version`
 
-Acceptance Criteria
-- Demo call succeeds without external dependencies.
-- Stable response under network/API failures.
+`species_composition`
+
+- `grid_id`
+- `teak`, `bamboo`, `mixed_deciduous`
 
 ---
 
-## Phase H — Integration with Frontend (6 hours shared)
+## 6) Execution Plan (Backend + Data Pipeline Only)
 
-Your Focus
-- Verify API calls from frontend map flow.
-- Confirm coordinate ordering and polygon closure behavior.
-- Validate payloads consumed by dashboard panels.
+## Phase 0 — Contract Freeze (1–2 hours)
 
-End-to-End Test Flow
-draw polygon -> frontend POST /forest-metrics -> backend aggregates -> JSON response -> dashboard update
+Tasks:
 
-Acceptance Criteria
-- End-to-end succeeds repeatedly with no manual patching.
-- Response time acceptable for demo.
+1. Freeze exact request/response shapes for all 10 endpoints.
+2. Confirm coordinate order is `[lon, lat]` everywhere.
+3. Freeze field names (`mixed_deciduous`, `forecast_health`, etc.).
+
+Done when:
+
+- OpenAPI reflects frozen schema and frontend can integrate without assumption work.
+
+## Phase 1 — Ingestion upgrade to fusion pipeline (4–6 hours)
+
+Tasks:
+
+1. Extend ingestion module for Sentinel-1 collection and export.
+2. Keep existing Sentinel-2 flow and add EVI-supporting bands.
+3. Standardize date windows and metadata logging for both sensors.
+
+Done when:
+
+- Raw outputs for Sentinel-1 + Sentinel-2 exist and are traceable by run metadata.
+
+## Phase 2 — Feature engineering at hectare level (4–6 hours)
+
+Tasks:
+
+1. Add EVI computation in preprocess.
+2. Add SAR feature extraction (VV, VH, VV/VH).
+3. Add NDVI trend computation over recent temporal slices.
+4. Emit unified feature rows keyed by deterministic `grid_id`.
+
+Done when:
+
+- Features table contains fused optical+radar predictors per hectare block.
+
+## Phase 3 — Model and metric generation alignment (5–7 hours)
+
+Tasks:
+
+1. Keep RandomForestRegressor for tree density with fused predictors.
+2. Align health formula to 0.6 NDVI / 0.4 NDMI.
+3. Keep rule-based risk: NDVI drop > 25%.
+4. Produce 6-month forecast from ARIMA/Prophet pipeline.
+5. Publish DB-ready metrics by `grid_id`.
+
+Done when:
+
+- Each `grid_id` has density, health, risk, and forecast metrics with bounded values.
+
+## Phase 4 — Database and SQL aggregation hardening (3–4 hours)
+
+Tasks:
+
+1. Update schema for missing fused columns where needed.
+2. Keep spatial indexes and idempotent upserts.
+3. Validate SQL aggregate functions for polygon intersections.
+4. Add/verify risk and forecast query paths with realistic test fixtures.
+
+Done when:
+
+- Polygon queries are correct and performant for demo-size polygons.
+
+## Phase 5 — Service/API hardening (4 hours)
+
+Tasks:
+
+1. Keep `/forest-metrics` as single source of dashboard truth.
+2. Ensure fallback responses use contract-consistent keys.
+3. Decouple heavy region pipeline work from synchronous request path where possible.
+4. Validate all endpoint contracts through tests.
+
+Done when:
+
+- APIs are contract-stable, predictable, and demo-safe.
+
+## Phase 6 — Demo reliability path (1–2 hours)
+
+Tasks:
+
+1. Cache precomputed Dang demo polygon response.
+2. Return cached values instantly for exact demo geometry.
+3. Keep fallback path safe if external services fail.
+
+Demo target payload:
+
+- Area: 5.1 km²
+- Estimated Trees: 84,200
+- Density: 162 trees/hectare
+- Health Score: 68
+- Risk Zones: 2
+- Species mix: teak/bamboo dominant
+
+Done when:
+
+- Demo route is deterministic and fast under unstable network conditions.
 
 ---
 
-## 4) Day-wise Timeline (Backend + Data Focus)
+## 7) Priority Rule (Strict)
 
-Day 1
-- 0–2h: Contract lock + schema alignment
-- 2–6h: Ingestion setup and raw raster handling
-- 6–10h: Feature extraction to hectare grid
-- 10–16h: Model/metric generation and DB upsert path
+No new features after core pipeline works.
 
-Day 2
-- 16–20h: Service hardening + endpoint validation
-- 20–24h: Integration testing with frontend
-- 24–30h: Forecast/risk refinements (only if core stable)
-- 30–36h: Demo cache hardening + test runbooks
-- 36–48h: Reliability pass, bug fixes, presentation support
+Execution order:
 
----
+1. Dashboard-driving backend path working (`/forest-metrics` + layers)
+2. Tree density + health metrics
+3. Risk detection
+4. Forecast
+5. Demo polish and pitch support
 
-## 5) Definition of Done (for Your Ownership)
-
-- Data pipeline produces reproducible features/metrics for Dang.
-- PostGIS stores and serves polygon-based aggregates correctly.
-- POST /forest-metrics is stable and contract-compliant.
-- Supporting endpoints are functional and validated.
-- Demo polygon returns fast, deterministic output.
-- Automated tests pass for API contract and service logic.
+Working product > ambitious unfinished scope.
 
 ---
 
-## 6) Risk Register + Mitigations
+## 8) Validation and Acceptance Checklist
 
-Risk: Coordinate order mismatch ([lat, lon] vs [lon, lat])
-- Mitigation: enforce [lon, lat] in schema/docs/tests.
+### Functional
 
-Risk: Data ingestion delays or missing satellite exports
-- Mitigation: keep seeded dataset + demo cache fallback.
+- Polygon query returns area, trees, density, health, risk, species, forecast.
+- Supporting endpoints return subset/layer data correctly.
+- Species endpoint uses external ecological sources, not image-level species classification.
 
-Risk: Slow spatial queries
-- Mitigation: GIST indexes, pre-aggregation, bounded polygon area for demo.
+### Data quality
 
-Risk: Last-minute feature creep
-- Mitigation: freeze scope after core flow passes integration.
+- All numeric outputs bounded and unit-consistent.
+- Hectare aggregation is deterministic for same inputs.
+- Risk rule triggers only on configured NDVI drop threshold.
+
+### Reliability
+
+- DB unavailable -> graceful fallback path.
+- External satellite query unavailable -> cached/demo response still works.
+- API contracts protected by tests.
 
 ---
 
-## 7) Immediate Next Actions (Start Now)
+## 9) Immediate Backend + Pipeline Action Items
 
-1. Lock and publish final /forest-metrics contract with frontend teammate.
-2. Implement/verify ingestion script skeleton and feature CSV pipeline.
-3. Validate DB bootstrap + upsert routines with sample Dang cells.
-4. Run full API tests and add one end-to-end polygon aggregation test with seeded data.
-5. Seed demo polygon cache and smoke-test presentation path.
+1. Lock frozen schema and update any inconsistent response keys.
+2. Implement Sentinel-1 ingestion branch and fused feature output.
+3. Add EVI + NDVI trend to preprocessing/feature extraction.
+4. Align health score formula to 0.6/0.4 in ML logic.
+5. Ensure `/forest-metrics` returns `forecast_health` in core response path.
+6. Add one end-to-end test for polygon -> SQL aggregate -> API response using seeded Dang fixture.
+7. Finalize demo polygon cache and verify instant response path.
