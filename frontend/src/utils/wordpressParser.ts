@@ -19,8 +19,8 @@
  *   "/industries/agriculture" → "/wp-pages/industries/agriculture/index.html"
  */
 export function pathToWpFile(pathname: string): string {
-  const clean = pathname.replace(/\/$/, '');
-  if (!clean || clean === '/') return '/wp-pages/index.html';
+  const clean = pathname.replace(/\/$/, "");
+  if (!clean || clean === "/") return "/wp-pages/index.html";
   return `/wp-pages${clean}/index.html`;
 }
 
@@ -29,39 +29,48 @@ export function pathToWpFile(pathname: string): string {
  * Returns the SPA path string if it is an internal page link,
  * or null if the href should be left unchanged.
  */
-function wpHrefToSpaPath(href: string, currentPathname?: string): string | null {
+function wpHrefToSpaPath(
+  href: string,
+  currentPathname?: string,
+): string | null {
   if (!href) return null;
 
   if (
-    href.startsWith('#') ||
-    href.startsWith('mailto:') ||
-    href.startsWith('tel:') ||
-    href.startsWith('javascript:') ||
-    href.startsWith('data:')
-  ) return null;
+    href.startsWith("#") ||
+    href.startsWith("mailto:") ||
+    href.startsWith("tel:") ||
+    href.startsWith("javascript:") ||
+    href.startsWith("data:")
+  )
+    return null;
 
   let path = href;
 
   // Absolute amnex.com URLs → strip domain
   if (/^https?:\/\/(www\.)?amnex\.com/i.test(path)) {
-    path = path.replace(/^https?:\/\/(www\.)?amnex\.com/i, '');
-  } else if (path.startsWith('http') || path.startsWith('//')) {
+    path = path.replace(/^https?:\/\/(www\.)?amnex\.com/i, "");
+  } else if (path.startsWith("http") || path.startsWith("//")) {
     return null; // truly external
   }
 
   // Skip WP asset paths (served as static files, not React routes)
   if (
-    path.startsWith('/wp-content/') ||
-    path.startsWith('/wp-includes/') ||
-    path.startsWith('/wp-json/') ||
-    path.startsWith('/feed/') ||
-    /\.(css|js|png|jpg|jpeg|gif|svg|ico|webp|woff|woff2|ttf|eot|pdf|zip|xml|json|mp4|webm|ogg|mp3|txt)(\?|#|$)/i.test(path)
-  ) return null;
+    path.startsWith("/wp-content/") ||
+    path.startsWith("/wp-static/") ||
+    path.startsWith("/wp-includes/") ||
+    path.startsWith("/wp-json/") ||
+    path.startsWith("/wp-cdn/") ||
+    path.startsWith("/feed/") ||
+    /\.(css|js|png|jpg|jpeg|gif|svg|ico|webp|woff|woff2|ttf|eot|pdf|zip|xml|json|mp4|webm|ogg|mp3|txt)(\?|#|$)/i.test(
+      path,
+    )
+  )
+    return null;
 
   // Resolve HTTrack relative paths against current pathname
-  if (!path.startsWith('/')) {
+  if (!path.startsWith("/")) {
     if (currentPathname) {
-      const base = `http://x${currentPathname.endsWith('/') ? currentPathname : currentPathname + '/'}`;
+      const base = `http://x${currentPathname.endsWith("/") ? currentPathname : currentPathname + "/"}`;
       try {
         path = new URL(path, base).pathname;
       } catch {
@@ -73,10 +82,10 @@ function wpHrefToSpaPath(href: string, currentPathname?: string): string | null 
   }
 
   // Normalize: remove trailing /index.html and trailing slash
-  path = path.replace(/\/index\.html$/, '').replace(/\/$/, '') || '/';
+  path = path.replace(/\/index\.html$/, "").replace(/\/$/, "") || "/";
 
   // Reject paths that look like files with extensions (missed above)
-  if (path.split('/').pop()?.includes('.')) return null;
+  if (path.split("/").pop()?.includes(".")) return null;
 
   return path;
 }
@@ -119,7 +128,7 @@ export function extractHeadStyleLinks(html: string): string[] {
 /** Extract all inline <style> blocks from <head> */
 export function extractHeadInlineStyles(html: string): string {
   const headMatch = html.match(/<head[^>]*>([\s\S]*?)<\/head>/i);
-  if (!headMatch) return '';
+  if (!headMatch) return "";
   const head = headMatch[1];
   const styles: string[] = [];
   const styleRe = /<style([^>]*)>([\s\S]*?)<\/style>/gi;
@@ -127,7 +136,7 @@ export function extractHeadInlineStyles(html: string): string {
   while ((m = styleRe.exec(head)) !== null) {
     styles.push(`<style${m[1]}>${m[2]}</style>`);
   }
-  return styles.join('\n');
+  return styles.join("\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -143,7 +152,7 @@ export function extractBodyAttributes(html: string): Record<string, string> {
   const attrRe = /([\w-]+)(?:=(?:"([^"]*?)"|'([^']*?)'|(\S+)))?/g;
   let m: RegExpExecArray | null;
   while ((m = attrRe.exec(attrsStr)) !== null) {
-    if (m[1]) attrs[m[1]] = m[2] ?? m[3] ?? m[4] ?? '';
+    if (m[1]) attrs[m[1]] = m[2] ?? m[3] ?? m[4] ?? "";
   }
   return attrs;
 }
@@ -167,24 +176,53 @@ export function extractBodyContent(html: string): string {
  */
 export function cleanHttrackArtifacts(html: string): string {
   let result = html
-    .replace(/<!-- Mirrored from[^>]+-->/gi, '')
-    .replace(/<!-- Added by HTTrack[^>]+-->/gi, '')
-    .replace(/<!-- \/Added by HTTrack -->/gi, '')
-    .replace(/<!-- Page cached by[^>]+-->/gi, '');
+    .replace(/<!-- Mirrored from[^>]+-->/gi, "")
+    .replace(/<!-- Added by HTTrack[^>]+-->/gi, "")
+    .replace(/<!-- \/Added by HTTrack -->/gi, "")
+    .replace(/<!-- Page cached by[^>]+-->/gi, "");
 
   // Rewrite all absolute amnex.com URLs to root-relative.
   // Covers src, href, data-src, data-menu-img-src, background, url() etc.
-  result = result.replace(/https?:\/\/(www\.)?amnex\.com\//gi, '/');
+  result = result.replace(/https?:\/\/(www\.)?amnex\.com\//gi, "/");
+
+  result = result
+    .replace(/\/(wp-content)\//gi, "/wp-static/")
+    .replace(/\/(c0\.wp\.com)\//gi, "/wp-cdn/c0/")
+    .replace(/\/(fonts\.googleapis\.com)\//gi, "/wp-cdn/fonts-googleapis/")
+    .replace(/\/(fonts\.gstatic\.com)\//gi, "/wp-cdn/fonts-gstatic/")
+    .replace(/\/(stats\.wp\.com)\//gi, "/wp-cdn/stats/");
+
+  result = result
+    .replace(/(^|["'\s(=])wp-content\//gi, "$1/wp-static/")
+    .replace(/(^|["'\s(=])c0\.wp\.com\//gi, "$1/wp-cdn/c0/")
+    .replace(
+      /(^|["'\s(=])fonts\.googleapis\.com\//gi,
+      "$1/wp-cdn/fonts-googleapis/",
+    )
+    .replace(/(^|["'\s(=])fonts\.gstatic\.com\//gi, "$1/wp-cdn/fonts-gstatic/")
+    .replace(/(^|["'\s(=])stats\.wp\.com\//gi, "$1/wp-cdn/stats/");
 
   // Fix broken logo images: HTTrack saved the animated SVG logos as empty
   // .html files. Replace both variants with the real logo PNG.
   result = result
-    .replace(/\/wp-content\/uploads\/2025\/08\/Amnex-GPW-3\.html/gi, '/amnex-logo.png')
-    .replace(/\/wp-content\/uploads\/2025\/08\/Amnex-GPW-White-2\.html/gi, '/amnex-logo.png')
+    .replace(
+      /\/wp-(?:content|static)\/uploads\/2025\/08\/Amnex-GPW-3\.html/gi,
+      "/amnex-logo.png",
+    )
+    .replace(
+      /\/wp-(?:content|static)\/uploads\/2025\/08\/Amnex-GPW-White-2\.html/gi,
+      "/amnex-logo.png",
+    )
     // Also handle relative paths (without leading slash) that appear in
     // pages at different nesting depths
-    .replace(/wp-content\/uploads\/2025\/08\/Amnex-GPW-3\.html/gi, '/amnex-logo.png')
-    .replace(/wp-content\/uploads\/2025\/08\/Amnex-GPW-White-2\.html/gi, '/amnex-logo.png');
+    .replace(
+      /wp-(?:content|static)\/uploads\/2025\/08\/Amnex-GPW-3\.html/gi,
+      "/amnex-logo.png",
+    )
+    .replace(
+      /wp-(?:content|static)\/uploads\/2025\/08\/Amnex-GPW-White-2\.html/gi,
+      "/amnex-logo.png",
+    );
 
   return result;
 }
@@ -224,5 +262,3 @@ export async function fetchAndParsePage(
     headInlineStyles: extractHeadInlineStyles(html),
   };
 }
-
-

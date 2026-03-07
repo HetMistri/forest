@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     app_host: str = "0.0.0.0"
     app_port: int = 8000
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+    cors_origin_regex: str = r"https://.*\.vercel\.app"
     database_url: str | None = None
     demo_cache_enabled: bool = True
     ml_model_path: str = "services/ml/density_model.pkl"
