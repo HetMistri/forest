@@ -9,63 +9,21 @@ const BASE = (import.meta.env.VITE_API_BASE_URL || DEFAULT_BASE).replace(
 );
 const API_DEBUG =
   import.meta.env.DEV || import.meta.env.VITE_API_DEBUG === "true";
-const DEFAULT_TIMEOUT_MS = Number(
-  import.meta.env.VITE_API_TIMEOUT_MS || 120000,
-);
-const FOREST_METRICS_TIMEOUT_MS = Number(
-  import.meta.env.VITE_FOREST_METRICS_TIMEOUT_MS || 300000,
-);
 const logger = createLogger("forestApi");
 
 logger.info("API client initialized", {
   baseUrl: BASE,
   debug: API_DEBUG,
   mode: import.meta.env.MODE,
-  defaultTimeoutMs: DEFAULT_TIMEOUT_MS,
-  forestMetricsTimeoutMs: FOREST_METRICS_TIMEOUT_MS,
 });
 
 function createRequestId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function normalizeTimeout(value: number, fallback: number): number {
-  return Number.isFinite(value) && value > 0 ? value : fallback;
-}
-
 interface RequestMeta {
   startedAt: number;
   requestId: string;
-  timeoutMs: number;
-}
-
-interface RequestOptions {
-  timeoutMs?: number;
-}
-
-async function fetchWithTimeout(
-  url: string,
-  init: RequestInit,
-  timeoutMs: number,
-  requestId: string,
-): Promise<Response> {
-  const controller = new AbortController();
-  const timerId = window.setTimeout(() => {
-    controller.abort();
-  }, timeoutMs);
-
-  try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") {
-      throw new Error(
-        `Request timed out after ${timeoutMs}ms (requestId=${requestId})`,
-      );
-    }
-    throw error;
-  } finally {
-    window.clearTimeout(timerId);
-  }
 }
 
 export interface PolygonRequest {
@@ -137,7 +95,6 @@ function toApiUrl(path: string): string {
 function logRequest(
   method: "GET" | "POST",
   path: string,
-  timeoutMs: number,
   requestId: string,
   body?: unknown,
 ): RequestMeta {
@@ -147,12 +104,11 @@ function logRequest(
       path,
       url: toApiUrl(path),
       requestId,
-      timeoutMs,
       body: body ?? null,
       startedAt,
     });
   }
-  return { startedAt, requestId, timeoutMs };
+  return { startedAt, requestId };
 }
 
 function logSuccess(
@@ -166,7 +122,6 @@ function logSuccess(
       path,
       url: toApiUrl(path),
       requestId: meta.requestId,
-      timeoutMs: meta.timeoutMs,
       status,
       durationMs: Date.now() - meta.startedAt,
     });
@@ -183,7 +138,6 @@ function logWarning(
     path,
     url: toApiUrl(path),
     requestId: meta.requestId,
-    timeoutMs: meta.timeoutMs,
     status,
     durationMs: Date.now() - meta.startedAt,
   });
@@ -199,7 +153,6 @@ function logError(
     path,
     url: toApiUrl(path),
     requestId: meta.requestId,
-    timeoutMs: meta.timeoutMs,
     durationMs: Date.now() - meta.startedAt,
     error,
   });
@@ -227,31 +180,18 @@ async function parseErrorDetail(res: Response): Promise<string> {
   return `HTTP ${res.status}`;
 }
 
-async function post<T>(
-  path: string,
-  body: unknown,
-  options: RequestOptions = {},
-): Promise<T> {
-  const timeoutMs = normalizeTimeout(
-    options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-    120000,
-  );
+async function post<T>(path: string, body: unknown): Promise<T> {
   const requestId = createRequestId();
-  const meta = logRequest("POST", path, timeoutMs, requestId, body);
+  const meta = logRequest("POST", path, requestId, body);
   try {
-    const res = await fetchWithTimeout(
-      toApiUrl(path),
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Request-ID": requestId,
-        },
-        body: JSON.stringify(body),
+    const res = await fetch(toApiUrl(path), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Request-ID": requestId,
       },
-      timeoutMs,
-      requestId,
-    );
+      body: JSON.stringify(body),
+    });
     if (!res.ok) {
       logWarning("POST", path, res.status, meta);
       const detail = await parseErrorDetail(res);
@@ -265,22 +205,13 @@ async function post<T>(
   }
 }
 
-async function get<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const timeoutMs = normalizeTimeout(
-    options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-    120000,
-  );
+async function get<T>(path: string): Promise<T> {
   const requestId = createRequestId();
-  const meta = logRequest("GET", path, timeoutMs, requestId);
+  const meta = logRequest("GET", path, requestId);
   try {
-    const res = await fetchWithTimeout(
-      toApiUrl(path),
-      {
-        headers: { "X-Request-ID": requestId },
-      },
-      timeoutMs,
-      requestId,
-    );
+    const res = await fetch(toApiUrl(path), {
+      headers: { "X-Request-ID": requestId },
+    });
     if (!res.ok) {
       logWarning("GET", path, res.status, meta);
       const detail = await parseErrorDetail(res);
@@ -297,11 +228,7 @@ async function get<T>(path: string, options: RequestOptions = {}): Promise<T> {
 export const forestApi = {
   // Core analysis
   getForestMetrics: (polygon: [number, number][]) =>
-    post<ForestMetricsResponse>(
-      "/forest-metrics",
-      { polygon },
-      { timeoutMs: FOREST_METRICS_TIMEOUT_MS },
-    ),
+    post<ForestMetricsResponse>("/forest-metrics", { polygon }),
 
   // Specific analytics
   getTreeDensity: (polygon: [number, number][]) =>
