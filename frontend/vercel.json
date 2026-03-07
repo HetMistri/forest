@@ -1,7 +1,7 @@
 {
   "rewrites": [
     {
-      "source": "/((?!api/|assets/|wp-content/|wp-pages/|c0\.wp\.com/|fonts\.googleapis\.com/|fonts\.gstatic\.com/|stats\.wp\.com/|favicon\.ico$|vite\.svg$|.*\\.[a-zA-Z0-9]+$).*)",
+      "source": "/((?!api/|assets/|wp-content/|wp-pages/|c0\\.wp\\.com/|fonts\\.googleapis\\.com/|fonts\\.gstatic\\.com/|stats\\.wp\\.com/|favicon\\.ico$|vite\\.svg$|.*\\.[a-zA-Z0-9]+$).*)",
       "destination": "/index.html"
     }
   ]
