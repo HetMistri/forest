@@ -4,6 +4,7 @@ import json
 import logging
 import math
 import os
+from threading import Lock, Thread
 from datetime import datetime, timedelta, timezone
 from hashlib import sha1
 from typing import Any
@@ -19,6 +20,7 @@ from api.schemas import (
     HealthForecastResponse,
     HealthScoreResponse,
     NDVIMapResponse,
+    PipelineStatusResponse,
     RiskAlert,
     RiskAlertsResponse,
     RiskZonesResponse,
@@ -30,6 +32,9 @@ logger = logging.getLogger(__name__)
 
 
 class ForestMetricsService:
+    _pipeline_runs_in_progress: set[str] = set()
+    _pipeline_runs_lock = Lock()
+
     def __init__(self) -> None:
         from services.ml_bridge import MLBridge
         from services.region_pipeline_service import RegionPipelineService
@@ -41,18 +46,53 @@ class ForestMetricsService:
         self.trigger_pipeline_on_request = (
             os.getenv("REGION_PIPELINE_TRIGGER_ON_REQUEST", "true").lower() == "true"
         )
+        self.pipeline_async = os.getenv("REGION_PIPELINE_ASYNC", "true").lower() == "true"
 
     def _strict_unavailable(self, endpoint: str, detail: str) -> None:
         logger.error("%s unavailable in strict mode: %s", endpoint, detail)
         raise HTTPException(status_code=503, detail=detail)
 
+    def _pipeline_worker(self, polygon: list[list[float]], polygon_fp: str) -> None:
+        try:
+            logger.info("Region pipeline background run started (polygon=%s)", polygon_fp)
+            result = self.region_pipeline.run_for_polygon(polygon)
+            logger.info("Region pipeline background run finished (polygon=%s): %s", polygon_fp, result)
+        except Exception as exc:
+            logger.warning("Region pipeline background run failed (polygon=%s): %s", polygon_fp, exc)
+        finally:
+            with self._pipeline_runs_lock:
+                self._pipeline_runs_in_progress.discard(polygon_fp)
+
+    def _launch_pipeline_background(self, polygon: list[list[float]], polygon_fp: str) -> None:
+        with self._pipeline_runs_lock:
+            if polygon_fp in self._pipeline_runs_in_progress:
+                logger.info("Region pipeline already in progress; skipping duplicate trigger (polygon=%s)", polygon_fp)
+                return
+            self._pipeline_runs_in_progress.add(polygon_fp)
+
+        thread = Thread(
+            target=self._pipeline_worker,
+            args=(polygon, polygon_fp),
+            name=f"region-pipeline-{polygon_fp}",
+            daemon=True,
+        )
+        thread.start()
+        logger.info("Region pipeline launched in background (polygon=%s, thread=%s)", polygon_fp, thread.name)
+
     def _prepare_region_data(self, polygon: list[list[float]]) -> None:
         if not self.trigger_pipeline_on_request:
             return
+
+        polygon_fp = self._polygon_fingerprint(polygon)
         try:
-            logger.info("Region pipeline trigger enabled; running for polygon=%s", self._polygon_fingerprint(polygon))
+            if self.pipeline_async:
+                logger.info("Region pipeline trigger enabled; launching async run for polygon=%s", polygon_fp)
+                self._launch_pipeline_background(polygon, polygon_fp)
+                return
+
+            logger.info("Region pipeline trigger enabled; running synchronously for polygon=%s", polygon_fp)
             result = self.region_pipeline.run_for_polygon(polygon)
-            logger.info("Region pipeline run result (polygon=%s): %s", self._polygon_fingerprint(polygon), result)
+            logger.info("Region pipeline run result (polygon=%s): %s", polygon_fp, result)
         except Exception as exc:
             logger.warning("Region pipeline failed for polygon request: %s", exc)
 
@@ -157,6 +197,60 @@ class ForestMetricsService:
         if not row or int(row.get("sample_count") or 0) <= 0:
             return None
         return row
+
+    def _has_feature_data(self, polygon: list[list[float]]) -> bool:
+        row = self._fetch_one(
+            """
+            WITH poly AS (
+                SELECT json_polygon_to_geom(CAST(:polygon AS jsonb)) AS geom
+            )
+            SELECT EXISTS(
+                SELECT 1
+                FROM forest_features ff
+                CROSS JOIN poly
+                WHERE ST_Intersects(ff.geometry, poly.geom)
+                LIMIT 1
+            ) AS has_data
+            """,
+            {"polygon": json.dumps(polygon)},
+        )
+        if not row:
+            return False
+        return bool(row.get("has_data", False))
+
+    def get_pipeline_status(self, polygon: list[list[float]]) -> PipelineStatusResponse:
+        polygon_fp = self._polygon_fingerprint(polygon)
+        in_progress = polygon_fp in self._pipeline_runs_in_progress
+
+        has_feature_data = self._has_feature_data(polygon)
+        if not has_feature_data and self.demo_cache_enabled:
+            has_feature_data = self._get_demo_cached_forest_metrics(polygon) is not None
+
+        if has_feature_data:
+            status = "ready"
+            detail = "Feature data is available for this polygon."
+            if in_progress:
+                detail = "Feature data is available; background refresh is in progress."
+        elif in_progress:
+            status = "processing"
+            detail = "Region pipeline is running for this polygon."
+        else:
+            status = "unavailable"
+            detail = "No feature data found and no active pipeline run for this polygon."
+
+        logger.info(
+            "Pipeline status served (polygon=%s, status=%s, in_progress=%s, has_feature_data=%s)",
+            polygon_fp,
+            status,
+            in_progress,
+            has_feature_data,
+        )
+        return PipelineStatusResponse(
+            status=status,
+            in_progress=in_progress,
+            has_feature_data=has_feature_data,
+            detail=detail,
+        )
 
     def _derive_live_metrics_from_features(self, polygon: list[list[float]]) -> dict[str, Any] | None:
         summary = self._feature_summary(polygon)
