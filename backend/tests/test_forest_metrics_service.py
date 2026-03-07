@@ -52,6 +52,7 @@ def test_get_forest_metrics_uses_db_aggregate_row(monkeypatch) -> None:
 
 def test_get_forest_metrics_demo_cache_fast_path(monkeypatch) -> None:
     service = ForestMetricsService()
+    service.demo_cache_enabled = True
 
     prepare_called = {"value": False}
 
