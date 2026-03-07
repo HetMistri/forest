@@ -27,6 +27,19 @@ class ForestMetricsRequest(PolygonRequest):
     pass
 
 
+class PipelineStatusRequest(PolygonRequest):
+    pass
+
+
+class PipelineStatusResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["processing", "ready", "unavailable"]
+    in_progress: bool
+    has_feature_data: bool
+    detail: str
+
+
 class ForestMetricsResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
