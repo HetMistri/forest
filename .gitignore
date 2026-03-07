@@ -25,6 +25,10 @@ uv.lock
 !.env.example
 
 # Credential files (never commit)
+beejrakshak-ee-*.json
+*-ee-*.json
+*service-account*.json
+*credentials*.json
 backend/*-ee-*.json
 backend/*service-account*.json
 backend/*credentials*.json

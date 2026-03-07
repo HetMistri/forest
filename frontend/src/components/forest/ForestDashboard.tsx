@@ -13,6 +13,7 @@ import type {
 import ForestMap from "./ForestMap";
 import AnalyticsPanel from "./AnalyticsPanel";
 import KPISection from "./KPISection";
+import { ActionPlanPanel } from "../ActionPlanPanel";
 import amnexLogo from "../../assets/image.png";
 import { createLogger } from "../../utils/logger";
 
@@ -265,6 +266,14 @@ export default function ForestDashboard() {
         : "⚠️ Unavailable"
     : "⏳ Waiting...";
 
+  const actionPlanPayload = metrics ? {
+    tree_count: metrics.tree_count,
+    tree_density: metrics.tree_density,
+    health_score: metrics.health_score,
+    risk_level: metrics.risk_level,
+    species_distribution: metrics.species_distribution
+  } : null;
+
   return (
     <div
       style={{
@@ -428,6 +437,11 @@ export default function ForestDashboard() {
           riskData={riskData}
           loading={loading}
         />
+
+        {/* Action Plan section */}
+        {actionPlanPayload && (
+          <ActionPlanPanel metrics={actionPlanPayload} />
+        )}
 
         {/* How it works */}
         <div style={{ marginTop: 36, marginBottom: 20 }}>

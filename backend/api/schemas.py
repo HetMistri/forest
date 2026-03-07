@@ -136,3 +136,19 @@ class DemoMetricsResponse(BaseModel):
     tree_count: int
     health_score: float
     risk: str
+
+
+class ActionPlanRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tree_count: int
+    tree_density: float
+    health_score: float
+    risk_level: str
+    species_distribution: dict[str, float]
+
+
+class ActionPlanResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    guidelines_markdown: str
