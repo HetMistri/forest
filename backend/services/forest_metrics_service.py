@@ -51,7 +51,7 @@ class ForestMetricsService:
         )
         self.pipeline_async = os.getenv("REGION_PIPELINE_ASYNC", "true").lower() == "true"
         self.pipeline_wait_for_completion = (
-            os.getenv("REGION_PIPELINE_WAIT_FOR_COMPLETION", "true").lower() == "true"
+            os.getenv("REGION_PIPELINE_WAIT_FOR_COMPLETION", "false").lower() == "true"
         )
 
     def _strict_unavailable(self, endpoint: str, detail: str) -> None:

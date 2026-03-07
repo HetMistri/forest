@@ -107,44 +107,91 @@ export default function ForestDashboard() {
       let lastRetryableError: unknown = null;
       let metrics: ForestMetricsResponse | null = null;
       let attempt = 0;
+      let shouldPollPipelineStatus = false;
+
       while (Date.now() - startedAt < ANALYSIS_RETRY_WINDOW_MS) {
-        attempt += 1;
-        logger.info("Requesting forest metrics", {
-          attempt,
-          elapsedMs: Date.now() - startedAt,
-        });
-        try {
-          metrics = await forestApi.getForestMetrics(coords);
-          logger.info("Forest metrics received", {
+        if (!shouldPollPipelineStatus) {
+          attempt += 1;
+          logger.info("Requesting forest metrics", {
             attempt,
-            areaKm2: metrics.area_km2,
-            treeCount: metrics.tree_count,
-            healthScore: metrics.health_score,
-            riskLevel: metrics.risk_level,
+            elapsedMs: Date.now() - startedAt,
           });
-          break;
-        } catch (error) {
-          if (!isRetryableAnalysisError(error)) {
-            logger.error("Non-retryable metrics error", { attempt, error });
-            throw error;
-          }
-          lastRetryableError = error;
 
           try {
-            const pipelineStatus = await forestApi.getPipelineStatus(coords);
-            logger.info("Pipeline status polled", pipelineStatus);
-            setState((s) => ({ ...s, pipelineStatus }));
-          } catch (statusError) {
-            logger.warn("Pipeline status poll failed", { statusError });
-          }
+            metrics = await forestApi.getForestMetrics(coords);
+            logger.info("Forest metrics received", {
+              attempt,
+              areaKm2: metrics.area_km2,
+              treeCount: metrics.tree_count,
+              healthScore: metrics.health_score,
+              riskLevel: metrics.risk_level,
+            });
+            break;
+          } catch (error) {
+            if (!isRetryableAnalysisError(error)) {
+              logger.error("Non-retryable metrics error", { attempt, error });
+              throw error;
+            }
 
-          logger.warn("Retryable metrics error; retry scheduled", {
-            attempt,
-            retryInMs: ANALYSIS_RETRY_INTERVAL_MS,
-            error,
-          });
-          await wait(ANALYSIS_RETRY_INTERVAL_MS);
+            lastRetryableError = error;
+            shouldPollPipelineStatus = true;
+            logger.warn("Retryable metrics error; switching to pipeline polling", {
+              attempt,
+              error,
+            });
+          }
         }
+
+        let pipelineStatus: PipelineStatusResponse | null = null;
+        try {
+          pipelineStatus = await forestApi.getPipelineStatus(coords);
+          logger.info("Pipeline status polled", pipelineStatus);
+          setState((s) => ({ ...s, pipelineStatus }));
+        } catch (statusError) {
+          logger.warn("Pipeline status poll failed", { statusError });
+          await wait(ANALYSIS_RETRY_INTERVAL_MS);
+          continue;
+        }
+
+        if (pipelineStatus.status !== "processing") {
+          attempt += 1;
+          logger.info("Re-attempting forest metrics after pipeline status", {
+            attempt,
+            status: pipelineStatus.status,
+            elapsedMs: Date.now() - startedAt,
+          });
+
+          try {
+            metrics = await forestApi.getForestMetrics(coords);
+            logger.info("Forest metrics received", {
+              attempt,
+              areaKm2: metrics.area_km2,
+              treeCount: metrics.tree_count,
+              healthScore: metrics.health_score,
+              riskLevel: metrics.risk_level,
+            });
+            break;
+          } catch (error) {
+            if (!isRetryableAnalysisError(error)) {
+              logger.error("Non-retryable metrics error", { attempt, error });
+              throw error;
+            }
+
+            lastRetryableError = error;
+            logger.warn("Retryable metrics error; retry scheduled", {
+              attempt,
+              retryInMs: ANALYSIS_RETRY_INTERVAL_MS,
+              error,
+            });
+          }
+        } else {
+          logger.info("Pipeline still processing; metrics request skipped this cycle", {
+            attempt,
+            elapsedMs: Date.now() - startedAt,
+          });
+        }
+
+        await wait(ANALYSIS_RETRY_INTERVAL_MS);
       }
 
       if (!metrics) {
