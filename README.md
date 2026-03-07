@@ -21,7 +21,7 @@ Our key technical differentiator is the **fusion of optical and radar satellite 
 
 ## 🏗️ Project Structure
 This project is divided into three core microservices. Check their respective READMEs for setup and architecture details:
-1.  **[Machine Learning Pipeline](./services/ml/ml_README.md):** Google Earth Engine data ingestion, feature extraction, and predictive modeling.
+1.  **[Machine Learning Pipeline](./backend/services/ml/ml_README.md):** Google Earth Engine data ingestion, feature extraction, and predictive modeling.
 2.  **[Backend API](./backend/backend_README.md):** FastAPI server handling metric calculations and serving data.
 3.  **[Frontend Dashboard](./frontend/frontend_README.md):** Interactive React & Mapbox UI for geospatial visualization.
 
@@ -30,5 +30,6 @@ To ensure a flawless presentation, our live demo utilizes a pre-computed polygon
 
 ---
 *Built for the Dang District ecosystem.*
+
 
 
