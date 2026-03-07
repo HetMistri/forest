@@ -175,8 +175,10 @@ const PageRenderer: React.FC<PageRendererProps> = ({ fileUrl, spaPathname, extra
         href.startsWith('/') &&
         !href.startsWith('//') &&
         !href.startsWith('/wp-content/') &&
+        !href.startsWith('/wp-static/') &&
         !href.startsWith('/wp-includes/') &&
         !href.startsWith('/wp-json/') &&
+        !href.startsWith('/wp-cdn/') &&
         !href.match(/\.(css|js|png|jpg|jpeg|gif|svg|ico|webp|woff|woff2|ttf|eot|pdf|zip|xml)$/i)
       ) {
         e.preventDefault();

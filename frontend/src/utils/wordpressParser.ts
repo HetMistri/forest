@@ -52,8 +52,10 @@ function wpHrefToSpaPath(href: string, currentPathname?: string): string | null 
   // Skip WP asset paths (served as static files, not React routes)
   if (
     path.startsWith('/wp-content/') ||
+    path.startsWith('/wp-static/') ||
     path.startsWith('/wp-includes/') ||
     path.startsWith('/wp-json/') ||
+    path.startsWith('/wp-cdn/') ||
     path.startsWith('/feed/') ||
     /\.(css|js|png|jpg|jpeg|gif|svg|ico|webp|woff|woff2|ttf|eot|pdf|zip|xml|json|mp4|webm|ogg|mp3|txt)(\?|#|$)/i.test(path)
   ) return null;
@@ -176,15 +178,29 @@ export function cleanHttrackArtifacts(html: string): string {
   // Covers src, href, data-src, data-menu-img-src, background, url() etc.
   result = result.replace(/https?:\/\/(www\.)?amnex\.com\//gi, '/');
 
+  result = result
+    .replace(/\/(wp-content)\//gi, '/wp-static/')
+    .replace(/\/(c0\.wp\.com)\//gi, '/wp-cdn/c0/')
+    .replace(/\/(fonts\.googleapis\.com)\//gi, '/wp-cdn/fonts-googleapis/')
+    .replace(/\/(fonts\.gstatic\.com)\//gi, '/wp-cdn/fonts-gstatic/')
+    .replace(/\/(stats\.wp\.com)\//gi, '/wp-cdn/stats/');
+
+  result = result
+    .replace(/(^|["'\s(=])wp-content\//gi, '$1/wp-static/')
+    .replace(/(^|["'\s(=])c0\.wp\.com\//gi, '$1/wp-cdn/c0/')
+    .replace(/(^|["'\s(=])fonts\.googleapis\.com\//gi, '$1/wp-cdn/fonts-googleapis/')
+    .replace(/(^|["'\s(=])fonts\.gstatic\.com\//gi, '$1/wp-cdn/fonts-gstatic/')
+    .replace(/(^|["'\s(=])stats\.wp\.com\//gi, '$1/wp-cdn/stats/');
+
   // Fix broken logo images: HTTrack saved the animated SVG logos as empty
   // .html files. Replace both variants with the real logo PNG.
   result = result
-    .replace(/\/wp-content\/uploads\/2025\/08\/Amnex-GPW-3\.html/gi, '/amnex-logo.png')
-    .replace(/\/wp-content\/uploads\/2025\/08\/Amnex-GPW-White-2\.html/gi, '/amnex-logo.png')
+    .replace(/\/wp-(?:content|static)\/uploads\/2025\/08\/Amnex-GPW-3\.html/gi, '/amnex-logo.png')
+    .replace(/\/wp-(?:content|static)\/uploads\/2025\/08\/Amnex-GPW-White-2\.html/gi, '/amnex-logo.png')
     // Also handle relative paths (without leading slash) that appear in
     // pages at different nesting depths
-    .replace(/wp-content\/uploads\/2025\/08\/Amnex-GPW-3\.html/gi, '/amnex-logo.png')
-    .replace(/wp-content\/uploads\/2025\/08\/Amnex-GPW-White-2\.html/gi, '/amnex-logo.png');
+    .replace(/wp-(?:content|static)\/uploads\/2025\/08\/Amnex-GPW-3\.html/gi, '/amnex-logo.png')
+    .replace(/wp-(?:content|static)\/uploads\/2025\/08\/Amnex-GPW-White-2\.html/gi, '/amnex-logo.png');
 
   return result;
 }
