@@ -2,14 +2,16 @@ import { createLogger } from "./logger";
 
 const DEFAULT_BASE = import.meta.env.DEV
   ? import.meta.env.VITE_BACKEND_URL || "http://localhost:8000"
-  : "https://forest-evle.onrender.com";
+  : "/api";
 const BASE = (import.meta.env.VITE_API_BASE_URL || DEFAULT_BASE).replace(
   /\/$/,
   "",
 );
 const API_DEBUG =
   import.meta.env.DEV || import.meta.env.VITE_API_DEBUG === "true";
-const DEFAULT_TIMEOUT_MS = Number(import.meta.env.VITE_API_TIMEOUT_MS || 120000);
+const DEFAULT_TIMEOUT_MS = Number(
+  import.meta.env.VITE_API_TIMEOUT_MS || 120000,
+);
 const FOREST_METRICS_TIMEOUT_MS = Number(
   import.meta.env.VITE_FOREST_METRICS_TIMEOUT_MS || 300000,
 );
@@ -121,6 +123,13 @@ export interface SystemStatusResponse {
   model_status: string;
 }
 
+export interface PipelineStatusResponse {
+  status: "processing" | "ready" | "unavailable";
+  in_progress: boolean;
+  has_feature_data: boolean;
+  detail: string;
+}
+
 function toApiUrl(path: string): string {
   return `${BASE}${path}`;
 }
@@ -223,7 +232,10 @@ async function post<T>(
   body: unknown,
   options: RequestOptions = {},
 ): Promise<T> {
-  const timeoutMs = normalizeTimeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS, 120000);
+  const timeoutMs = normalizeTimeout(
+    options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    120000,
+  );
   const requestId = createRequestId();
   const meta = logRequest("POST", path, timeoutMs, requestId, body);
   try {
@@ -254,7 +266,10 @@ async function post<T>(
 }
 
 async function get<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const timeoutMs = normalizeTimeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS, 120000);
+  const timeoutMs = normalizeTimeout(
+    options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    120000,
+  );
   const requestId = createRequestId();
   const meta = logRequest("GET", path, timeoutMs, requestId);
   try {
@@ -282,7 +297,11 @@ async function get<T>(path: string, options: RequestOptions = {}): Promise<T> {
 export const forestApi = {
   // Core analysis
   getForestMetrics: (polygon: [number, number][]) =>
-    post<ForestMetricsResponse>("/forest-metrics", { polygon }, { timeoutMs: FOREST_METRICS_TIMEOUT_MS }),
+    post<ForestMetricsResponse>(
+      "/forest-metrics",
+      { polygon },
+      { timeoutMs: FOREST_METRICS_TIMEOUT_MS },
+    ),
 
   // Specific analytics
   getTreeDensity: (polygon: [number, number][]) =>
@@ -306,4 +325,6 @@ export const forestApi = {
 
   // Utility
   getSystemStatus: () => get<SystemStatusResponse>("/system-status"),
+  getPipelineStatus: (polygon: [number, number][]) =>
+    post<PipelineStatusResponse>("/pipeline-status", { polygon }),
 };

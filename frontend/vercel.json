@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/api/(.*)",
+      "destination": "https://forest-evle.onrender.com/$1"
+    },
+    {
       "source": "/((?!api/|assets/|favicon\\.ico$|vite\\.svg$|.*\\.[a-zA-Z0-9]+$).*)",
       "destination": "/index.html"
     }

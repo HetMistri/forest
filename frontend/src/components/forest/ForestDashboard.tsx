@@ -3,6 +3,7 @@ import { forestApi } from "../../utils/forestApi";
 import type {
   ForestMetricsResponse,
   HealthForecastResponse,
+  PipelineStatusResponse,
   RiskAlertsResponse,
   HealthScoreResponse,
   TreeDensityResponse,
@@ -34,6 +35,11 @@ function isRetryableAnalysisError(error: unknown): boolean {
   const message = error.message.toLowerCase();
   return (
     message.includes("503") ||
+    message.includes("502") ||
+    message.includes("bad gateway") ||
+    message.includes("failed to fetch") ||
+    message.includes("network") ||
+    message.includes("timed out") ||
     message.includes("service unavailable") ||
     message.includes("no real") ||
     message.includes("pipeline") ||
@@ -50,6 +56,7 @@ export interface DashboardState {
   species: SpeciesCompositionResponse | null;
   systemStatus: SystemStatusResponse | null;
   polygon: [number, number][] | null;
+  pipelineStatus: PipelineStatusResponse | null;
   loading: boolean;
   error: string | null;
 }
@@ -64,6 +71,7 @@ export default function ForestDashboard() {
     species: null,
     systemStatus: null,
     polygon: null,
+    pipelineStatus: null,
     loading: false,
     error: null,
   });
@@ -82,7 +90,18 @@ export default function ForestDashboard() {
       polygon: coords,
     });
 
-    setState((s) => ({ ...s, loading: true, error: null, polygon: coords }));
+    setState((s) => ({
+      ...s,
+      loading: true,
+      error: null,
+      polygon: coords,
+      pipelineStatus: {
+        status: "processing",
+        in_progress: true,
+        has_feature_data: false,
+        detail: "Starting analysis pipeline...",
+      },
+    }));
     try {
       const startedAt = Date.now();
       let lastRetryableError: unknown = null;
@@ -110,6 +129,15 @@ export default function ForestDashboard() {
             throw error;
           }
           lastRetryableError = error;
+
+          try {
+            const pipelineStatus = await forestApi.getPipelineStatus(coords);
+            logger.info("Pipeline status polled", pipelineStatus);
+            setState((s) => ({ ...s, pipelineStatus }));
+          } catch (statusError) {
+            logger.warn("Pipeline status poll failed", { statusError });
+          }
+
           logger.warn("Retryable metrics error; retry scheduled", {
             attempt,
             retryInMs: ANALYSIS_RETRY_INTERVAL_MS,
@@ -165,6 +193,12 @@ export default function ForestDashboard() {
         treeDensity: td,
         species: sp,
         systemStatus: sys,
+        pipelineStatus: {
+          status: "ready",
+          in_progress: false,
+          has_feature_data: true,
+          detail: "Feature data is ready for this polygon.",
+        },
         loading: false,
         error: null,
       }));
@@ -200,9 +234,18 @@ export default function ForestDashboard() {
     treeDensity,
     species,
     systemStatus,
+    pipelineStatus,
     loading,
     error,
   } = state;
+
+  const pipelineLabel = pipelineStatus
+    ? pipelineStatus.status === "ready"
+      ? "✅ Ready"
+      : pipelineStatus.status === "processing"
+        ? "⏳ Processing"
+        : "⚠️ Unavailable"
+    : "⏳ Waiting...";
 
   return (
     <div
@@ -293,6 +336,10 @@ export default function ForestDashboard() {
                   ? "✅ Live"
                   : "⚠️ Limited"
                 : "⏳ Checking…",
+            },
+            {
+              label: "Pipeline",
+              value: pipelineLabel,
             },
           ].map(({ label, value }) => (
             <div
