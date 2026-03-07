@@ -107,44 +107,8 @@ export default function ForestDashboard() {
       let lastRetryableError: unknown = null;
       let metrics: ForestMetricsResponse | null = null;
       let attempt = 0;
-      let shouldPollPipelineStatus = false;
 
       while (Date.now() - startedAt < ANALYSIS_RETRY_WINDOW_MS) {
-        if (!shouldPollPipelineStatus) {
-          attempt += 1;
-          logger.info("Requesting forest metrics", {
-            attempt,
-            elapsedMs: Date.now() - startedAt,
-          });
-
-          try {
-            metrics = await forestApi.getForestMetrics(coords);
-            logger.info("Forest metrics received", {
-              attempt,
-              areaKm2: metrics.area_km2,
-              treeCount: metrics.tree_count,
-              healthScore: metrics.health_score,
-              riskLevel: metrics.risk_level,
-            });
-            break;
-          } catch (error) {
-            if (!isRetryableAnalysisError(error)) {
-              logger.error("Non-retryable metrics error", { attempt, error });
-              throw error;
-            }
-
-            lastRetryableError = error;
-            shouldPollPipelineStatus = true;
-            logger.warn(
-              "Retryable metrics error; switching to pipeline polling",
-              {
-                attempt,
-                error,
-              },
-            );
-          }
-        }
-
         let pipelineStatus: PipelineStatusResponse | null = null;
         try {
           pipelineStatus = await forestApi.getPipelineStatus(coords);
@@ -158,7 +122,7 @@ export default function ForestDashboard() {
 
         if (pipelineStatus.status !== "processing") {
           attempt += 1;
-          logger.info("Re-attempting forest metrics after pipeline status", {
+          logger.info("Requesting forest metrics after pipeline status", {
             attempt,
             status: pipelineStatus.status,
             elapsedMs: Date.now() - startedAt,
@@ -183,6 +147,7 @@ export default function ForestDashboard() {
             lastRetryableError = error;
             logger.warn("Retryable metrics error; retry scheduled", {
               attempt,
+              pipelineStatus: pipelineStatus.status,
               retryInMs: ANALYSIS_RETRY_INTERVAL_MS,
               error,
             });
