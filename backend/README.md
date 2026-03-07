@@ -1,15 +1,69 @@
-# Backend
+# Forest Backend v0.1 Beta — FastAPI Geospatial Analytics API
 
-FastAPI backend for forest analytics, with environment-based config and PostgreSQL/PostGIS connectivity.
+The backend is the core analytics service for polygon-based forest insights. It serves metrics APIs, coordinates data readiness checks, and connects to PostGIS for spatial computation.
 
-## 1) Setup
+[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-teal.svg)](https://fastapi.tiangolo.com/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue.svg)](https://www.postgresql.org/)
+
+---
+
+## 📋 Table of Contents
+
+- 🚀 What Backend Does
+- 🧠 How It Works (Simple Explanation)
+- 📦 Setup & Run
+- 🧭 Main Commands
+- 🧪 Typical First-Time Usage
+- ⚙️ Requirements
+- 🛡️ Reliability Notes
+- ✨ Features
+- 🔌 API Surface
+
+---
+
+# 🚀 What Backend Does
+
+Backend provides:
+
+✅ Polygon-driven forest metrics APIs
+
+✅ Pipeline status checks (`/pipeline-status`)
+
+✅ DB + feature-derived analytics flow
+
+✅ Layer/utility endpoints for dashboard integration
+
+✅ Strict-mode safeguards for unavailable real data
+
+---
+
+# 🧠 How It Works (Simple Explanation)
+
+At a high level:
+
+🗺️ Frontend sends polygon coordinates
+
+🧮 Backend checks PostGIS functions and feature summaries
+
+📊 If data exists, responses are computed and returned
+
+🔄 If data is still preparing, status indicates processing
+
+⚠️ In strict mode, unavailable real data can return `503`
+
+---
+
+# 📦 Setup & Run
+
+Step 1 — Install dependencies and environment
 
 ```bash
 uv sync
 cp .env.example .env
 ```
 
-Update `.env` with your Render external DB URL using SQLAlchemy format:
+Step 2 — Configure `.env`
 
 ```env
 DATABASE_URL=postgresql+psycopg://<user>:<password>@<host>:5432/<database>
@@ -22,47 +76,33 @@ GEE_SERVICE_ACCOUNT=<service-account>@<project>.iam.gserviceaccount.com
 GEE_PRIVATE_KEY_FILE=/absolute/path/to/service-account-key.json
 ```
 
-When `STRICT_PROD_MODE=true`, endpoints return `503` if real DB/pipeline data is unavailable (no dummy/static fallback).
-
-## 2) Run server
+Step 3 — Run API
 
 ```bash
 uv run uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-or
+Alternative:
 
 ```bash
 uv run python main.py
 ```
 
-## 3) Access API
+Docs:
 
 - Swagger: `http://127.0.0.1:8000/docs`
 - OpenAPI: `http://127.0.0.1:8000/openapi.json`
 
-## 4) API surface
+---
 
-- POST `/forest-metrics`
-- POST `/tree-density`
-- POST `/health-score`
-- POST `/risk-alerts`
-- POST `/species-composition`
-- POST `/health-forecast`
-- GET `/ndvi-map`
-- GET `/risk-zones`
-- GET `/system-status`
-- GET `/demo-metrics`
+# 🧭 Main Commands
 
-## 5) Database bootstrap
+- `uv run uvicorn api.main:app --reload --host 0.0.0.0 --port 8000`
+- `uv run python main.py`
+- `uv run pytest`
+- `uv run python scripts/run_smoke_pipeline.py`
 
-SQL scaffold is in `sql/bootstrap.sql` and creates:
-
-- PostGIS + pgcrypto extensions
-- Core tables (`forest_features`, `forest_metrics`, `species_composition`, `risk_alerts`, `demo_polygon_cache`)
-- Indexes, update triggers, views, and stored functions for aggregation
-
-Apply with:
+DB bootstrap (manual):
 
 ```bash
 uv run python - <<'PY'
@@ -73,59 +113,68 @@ engine = get_engine()
 script = Path('sql/bootstrap.sql').read_text()
 
 with engine.raw_connection() as raw:
-	with raw.cursor() as cur:
-		cur.execute(script)
-	raw.commit()
+    with raw.cursor() as cur:
+        cur.execute(script)
+    raw.commit()
 
 print('Bootstrap applied')
 PY
 ```
 
-## 6) Docker local stack (PostGIS + Backend)
+---
 
-From repository root:
+# 🧪 Typical First-Time Usage
 
-```bash
-docker compose up --build
-```
+1. Start local PostGIS (`docker compose up -d db` from repo root)
+2. Bootstrap DB (`sql/bootstrap.sql`, auto in docker init)
+3. Start backend server
+4. Open `/docs` and test `/pipeline-status` and `/forest-metrics`
+5. Run smoke pipeline if selected polygon has no data
 
-Services:
+---
 
-- Backend API: `http://127.0.0.1:8000`
-- Swagger: `http://127.0.0.1:8000/docs`
-- Local PostGIS: `localhost:5433`
+# ⚙️ Requirements
 
-Notes:
+🐍 Python 3.11+
 
-- `docker-compose.yml` uses local PostGIS (`postgis/postgis`) and mounts `backend/sql/bootstrap.sql` into `/docker-entrypoint-initdb.d/`.
-- Bootstrap runs automatically on first DB initialization.
-- The container backend uses local DB URL, so remote `DATABASE_URL` latency is avoided.
-- To reset DB and re-run bootstrap from scratch:
+🗄️ PostgreSQL/PostGIS
 
-```bash
-docker compose down -v
-docker compose up --build
-```
+🛰️ Earth Engine credentials for ingestion workflows
 
-## 7) Backend smoke pipeline (download -> processing -> DB)
+📦 `uv` package manager (recommended)
 
-Use local Docker PostGIS (fast, no remote DB latency):
+---
 
-```bash
-cd ..
-docker compose up -d db
-```
+# 🛡️ Reliability Notes
 
-Then run from `backend/`:
+- `STRICT_PROD_MODE=true` avoids silent dummy responses when real data is missing.
+- `DEMO_CACHE_ENABLED=true` allows cached polygon fallback responses.
+- Pipeline processing may temporarily return `503` for metrics until data is ready.
 
-```bash
-DATABASE_URL=postgresql+psycopg://forest:forest@127.0.0.1:5433/forest_local \
-uv run python scripts/run_smoke_pipeline.py
-```
+---
 
-This executes:
+# ✨ Features
 
-- Sentinel-2 download from Earth Engine (small smoke bbox)
-- NDVI/NDMI/EVI preprocessing
-- Feature extraction and insert into `forest_features`
-- Row-count verification for smoke source
+🌲 Forest analytics endpoints for metrics, density, health, risk, species, forecast
+
+📡 Pipeline-ready checks and request-triggered region pipeline support
+
+🗃️ Spatial DB integration with PostGIS helper functions
+
+🧪 Test suite for API contract and service-level behavior
+
+---
+
+# 🔌 API Surface
+
+- `POST /forest-metrics`
+- `POST /tree-density`
+- `POST /health-score`
+- `POST /risk-alerts`
+- `POST /species-composition`
+- `POST /health-forecast`
+- `POST /pipeline-status`
+- `GET /ndvi-map`
+- `GET /risk-zones`
+- `GET /system-status`
+- `GET /demo-metrics`

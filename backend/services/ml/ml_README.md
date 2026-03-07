@@ -1,32 +1,127 @@
-# 🧠 Forest Platform - Machine Learning & Data Pipeline
+# Forest ML Module v0.1 Beta — Density, Health, Risk & Forecast
 
-This module is the scientific core of the platform. It handles satellite data ingestion, feature fusion, tree density estimation, and predictive forecasting. By fusing optical and radar data, we achieve true all-weather monitoring.
+This module contains the ML and analytical core used by the backend for feature processing, density estimation, health/risk scoring, and forecast generation.
 
-## 🛰️ Data Sources
-1.  **Sentinel-2 (Optical):** Used for vegetation health indices (NDVI, NDMI, EVI).
-2.  **Sentinel-1 (SAR / Radar):** Used for structural biomass estimation (VV backscatter, VH backscatter, VV/VH ratio). Penetrates clouds during the monsoon.
-3.  **FSI & Bhuvan Data:** Ground-truth and regional data used to estimate species composition (Teak, Bamboo, etc.) without relying on unreliable satellite species-detection.
+[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
+[![scikit--learn](https://img.shields.io/badge/scikit--learn-ML-orange.svg)](https://scikit-learn.org/)
+[![NumPy](https://img.shields.io/badge/NumPy-Scientific-blue.svg)](https://numpy.org/)
+[![Pandas](https://img.shields.io/badge/Pandas-Data-black.svg)](https://pandas.pydata.org/)
 
-## 🔄 Technical Pipeline
+---
 
-### 1. Data Ingestion & Processing
-* Powered by **Google Earth Engine (GEE)**.
-* We extract features from both satellites and aggregate pixels into standard **hectare blocks**.
-* Calculate block-level features: NDVI mean, NDVI trend, moisture index, and SAR backscatter.
+## 📋 Table of Contents
 
-### 2. Density Estimation
-* **Model:** `RandomForestRegressor`
-* **Approach:** We calculate density per hectare rather than attempting individual tree counting (which is error-prone at satellite resolutions).
-* **Output:** `tree_density_per_hectare` (Total trees = density × area).
+- 🚀 What ML Module Does
+- 🧠 How It Works (Simple Explanation)
+- 📦 Files and Entry Points
+- 🧭 Main Commands
+- 🧪 Typical First-Time Usage
+- ⚙️ Requirements
+- 🛡️ Reliability Notes
+- ✨ Features
+- 🔒 Model & Logic Notes
 
-### 3. Health & Anomaly Detection
-* **Health Score:** A weighted index combining NDVI and NDMI (0-100 scale).
-* **Risk Detection:** Rule-based anomaly detection. Any NDVI drop > 25% within a short time-frame immediately flags a hotspot.
+---
 
-### 4. Time-Series Forecasting
-* **Model:** ARIMA / Prophet
-* **Input:** Historical NDVI/health time-series data.
-* **Output:** A 6-month projection of forest health trends.
+# 🚀 What ML Module Does
 
-## 🚀 Execution Note
-This pipeline is designed to pre-compute the necessary metrics and push them to the backend, ensuring zero-latency data delivery during live interactions.
+ML module provides:
+
+✅ Tree density prediction from NDVI/NDMI/SAR features
+
+✅ Health score computation
+
+✅ Deforestation risk labeling
+
+✅ Forecast generation for future health trends
+
+✅ Feature pipeline helpers for backend service integration
+
+---
+
+# 🧠 How It Works (Simple Explanation)
+
+At a high level:
+
+🛰️ Satellite features are prepared (optical + SAR)
+
+🌲 A trained model estimates tree density per hectare
+
+💚 Health score is derived from vegetation indicators
+
+⚠️ Risk level is derived from trend/anomaly rules
+
+📉 Forecast module outputs future health points
+
+---
+
+# 📦 Files and Entry Points
+
+- `feature_pipeline.py` — feature transformations
+- `health_and_risk.py` — health score and risk logic
+- `forecast.py` — forecast generation
+- `train_realistic_model.py` — model training utility
+- `density_model.pkl` — trained model artifact
+
+---
+
+# 🧭 Main Commands
+
+From `backend/`:
+
+- `uv run python services/ml/train_realistic_model.py`
+
+Project-level pipeline trigger:
+
+- `python scripts/run_backend_pipeline.py`
+
+Smoke pipeline:
+
+- `uv run python scripts/run_smoke_pipeline.py`
+
+---
+
+# 🧪 Typical First-Time Usage
+
+1. Ensure backend dependencies are installed (`uv sync`)
+2. Run training script if retraining is needed
+3. Execute smoke pipeline to produce features
+4. Call backend endpoints (`/forest-metrics`, `/health-score`) to validate outputs
+
+---
+
+# ⚙️ Requirements
+
+🐍 Python 3.11+
+
+📦 scikit-learn, pandas, numpy
+
+🛰️ Earth Engine access for full ingestion workflows
+
+---
+
+# 🛡️ Reliability Notes
+
+- Density predictions are clamped to a realistic range in service logic.
+- If model loading fails, fallback constants are used to keep API responsive.
+- Outputs are estimates from model/feature inputs and should be validated against field data for accuracy claims.
+
+---
+
+# ✨ Features
+
+🧮 RandomForest-based density estimation
+
+💚 Health and risk scoring utilities
+
+📈 Forecast point generation for API responses
+
+🔌 Clean integration through backend `MLBridge`
+
+---
+
+# 🔒 Model & Logic Notes
+
+- Tree count is derived from: `density_per_ha × area_ha`
+- Health/risk values are computed from vegetation and trend indicators
+- Model artifact loading is optional but recommended for realistic outputs
