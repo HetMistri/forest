@@ -51,7 +51,7 @@ class ForestMetricsService:
         )
         self.pipeline_async = os.getenv("REGION_PIPELINE_ASYNC", "true").lower() == "true"
         self.pipeline_wait_for_completion = (
-            os.getenv("REGION_PIPELINE_WAIT_FOR_COMPLETION", "true").lower() == "true"
+            os.getenv("REGION_PIPELINE_WAIT_FOR_COMPLETION", "false").lower() == "true"
         )
 
     def _strict_unavailable(self, endpoint: str, detail: str) -> None:
@@ -310,6 +310,30 @@ class ForestMetricsService:
         canonical = json.dumps(polygon, separators=(",", ":"), ensure_ascii=False)
         return sha1(canonical.encode("utf-8")).hexdigest()[:10]
 
+    def _pipeline_state(self, polygon_fp: str) -> tuple[bool, str | None]:
+        with self._pipeline_runs_lock:
+            in_progress = polygon_fp in self._pipeline_runs_in_progress
+            last_result = self._last_pipeline_result_by_polygon.get(polygon_fp)
+
+        if isinstance(last_result, dict):
+            raw_error = last_result.get("error")
+            if isinstance(raw_error, str) and raw_error.strip():
+                return in_progress, raw_error.strip()
+
+        return in_progress, None
+
+    def _is_no_data_pipeline_error(self, error_message: str | None) -> bool:
+        if not error_message:
+            return False
+        text = error_message.lower()
+        return (
+            "no bands" in text
+            or "image with no bands" in text
+            or "no image" in text
+            or "no valid pixels" in text
+            or "empty collection" in text
+        )
+
     # ── DB Helpers ───────────────────────────────────────────────────────
 
     def _fetch_one(self, query: str, params: dict[str, Any] | None = None) -> dict[str, Any] | None:
@@ -430,8 +454,7 @@ class ForestMetricsService:
 
     def get_pipeline_status(self, polygon: list[list[float]]) -> PipelineStatusResponse:
         polygon_fp = self._polygon_fingerprint(polygon)
-        with self._pipeline_runs_lock:
-            in_progress = polygon_fp in self._pipeline_runs_in_progress
+        in_progress, pipeline_error = self._pipeline_state(polygon_fp)
 
         has_feature_data = self._has_feature_data(polygon)
         if not has_feature_data:
@@ -447,6 +470,9 @@ class ForestMetricsService:
         elif in_progress:
             status = "processing"
             detail = "Region pipeline is running for this polygon."
+        elif self._is_no_data_pipeline_error(pipeline_error):
+            status = "unavailable"
+            detail = "No satellite data found for this area/time window. Try another region or date range."
         else:
             status = "unavailable"
             detail = "No feature data found and no active pipeline run for this polygon."
@@ -583,6 +609,19 @@ class ForestMetricsService:
                 species_distribution=dict(derived["species_distribution"]),
                 forecast_health=float(derived["forecast_health"]),
             )
+
+        if self.trigger_pipeline_on_request:
+            in_progress, pipeline_error = self._pipeline_state(polygon_fp)
+            if in_progress:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Pipeline processing for selected polygon. Please retry shortly.",
+                )
+            if self._is_no_data_pipeline_error(pipeline_error):
+                raise HTTPException(
+                    status_code=422,
+                    detail="No satellite data found for selected area/time window. Try another region or date range.",
+                )
 
         if self.strict_prod_mode and not self.trigger_pipeline_on_request:
             self._strict_unavailable(
