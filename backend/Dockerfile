@@ -10,12 +10,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     curl \
     libexpat1 \
+    gdal-bin \
+    libgdal-dev \
+    libgeos-dev \
+    proj-bin \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml /app/pyproject.toml
-RUN uv export --format requirements.txt --no-dev --no-editable --no-hashes --no-emit-project -o /tmp/requirements.txt \
-    && uv pip install --system --no-cache -r /tmp/requirements.txt
+
+RUN uv pip install --system --no-cache .
 
 COPY . /app
 
 EXPOSE 8000
+
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port $PORT"]
