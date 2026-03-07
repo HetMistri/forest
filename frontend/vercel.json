@@ -1,27 +1,7 @@
 {
   "rewrites": [
     {
-      "source": "/wp-static/(.*)",
-      "destination": "/wp-content/$1"
-    },
-    {
-      "source": "/wp-cdn/c0/(.*)",
-      "destination": "/c0.wp.com/$1"
-    },
-    {
-      "source": "/wp-cdn/fonts-googleapis/(.*)",
-      "destination": "/fonts.googleapis.com/$1"
-    },
-    {
-      "source": "/wp-cdn/fonts-gstatic/(.*)",
-      "destination": "/fonts.gstatic.com/$1"
-    },
-    {
-      "source": "/wp-cdn/stats/(.*)",
-      "destination": "/stats.wp.com/$1"
-    },
-    {
-      "source": "/((?!api/|assets/|wp-static/|wp-pages/|wp-cdn/|favicon\\.ico$|vite\\.svg$|.*\\.[a-zA-Z0-9]+$).*)",
+      "source": "/((?!api/|assets/|favicon\\.ico$|vite\\.svg$|.*\\.[a-zA-Z0-9]+$).*)",
       "destination": "/index.html"
     }
   ]
