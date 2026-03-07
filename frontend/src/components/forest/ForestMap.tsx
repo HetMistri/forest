@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import L from "leaflet";
 import type { GeoJsonObject } from "geojson";
 import "leaflet/dist/leaflet.css";
@@ -14,6 +14,7 @@ import {
 import { EditControl } from "react-leaflet-draw";
 import { forestApi } from "../../utils/forestApi";
 import type { NDVIMapResponse, RiskZonesResponse } from "../../utils/forestApi";
+import { createLogger } from "../../utils/logger";
 
 // Fix Leaflet's broken default icon paths when bundled with Vite
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)
@@ -40,6 +41,7 @@ interface Props {
 }
 
 type LayerMode = "default" | "ndvi" | "risk";
+const logger = createLogger("ForestMap");
 
 export default function ForestMap({ onPolygonDrawn, riskAlerts = [] }: Props) {
   const [activeLayer, setActiveLayer] = useState<LayerMode>("default");
@@ -47,7 +49,27 @@ export default function ForestMap({ onPolygonDrawn, riskAlerts = [] }: Props) {
   const [riskZones, setRiskZones] = useState<RiskZonesResponse | null>(null);
   const [layerLoading, setLayerLoading] = useState(false);
 
+  useEffect(() => {
+    logger.info("Map mounted", {
+      center: DANG_CENTER,
+      zoom: DANG_ZOOM,
+    });
+    return () => {
+      logger.info("Map unmounted");
+    };
+  }, []);
+
+  useEffect(() => {
+    logger.debug("Risk alerts updated", { count: riskAlerts.length });
+  }, [riskAlerts]);
+
   async function handleLayerChange(layer: LayerMode): Promise<void> {
+    const startedAt = Date.now();
+    logger.info("Layer change requested", {
+      from: activeLayer,
+      to: layer,
+    });
+
     setActiveLayer(layer);
 
     if (layer === "ndvi" && !ndviData) {
@@ -55,8 +77,16 @@ export default function ForestMap({ onPolygonDrawn, riskAlerts = [] }: Props) {
       try {
         const data = await forestApi.getNDVIMap();
         setNdviData(data);
+        logger.info("NDVI layer loaded", {
+          durationMs: Date.now() - startedAt,
+          hasTile: Boolean(data.tile_url),
+          hasGeoJson: Boolean(data.geojson),
+        });
       } catch {
         setNdviData(null);
+        logger.error("NDVI layer load failed", {
+          durationMs: Date.now() - startedAt,
+        });
       } finally {
         setLayerLoading(false);
       }
@@ -68,12 +98,25 @@ export default function ForestMap({ onPolygonDrawn, riskAlerts = [] }: Props) {
       try {
         const data = await forestApi.getRiskZones();
         setRiskZones(data);
+        logger.info("Risk zones layer loaded", {
+          durationMs: Date.now() - startedAt,
+          zoneCount: data.zones.length,
+        });
       } catch {
         setRiskZones(null);
+        logger.error("Risk zones layer load failed", {
+          durationMs: Date.now() - startedAt,
+        });
       } finally {
         setLayerLoading(false);
       }
+      return;
     }
+
+    logger.debug("Layer switched using cached data", {
+      to: layer,
+      durationMs: Date.now() - startedAt,
+    });
   }
 
   function handleCreated(e: { layer: L.Layer }) {
@@ -82,6 +125,10 @@ export default function ForestMap({ onPolygonDrawn, riskAlerts = [] }: Props) {
     const ring = (Array.isArray(rings[0]) ? rings[0] : rings) as L.LatLng[];
     // Convert to [lon, lat] to match the existing API contract
     const coords: [number, number][] = ring.map((ll) => [ll.lng, ll.lat]);
+    logger.info("Polygon created", {
+      vertices: coords.length,
+      coordinates: coords,
+    });
     onPolygonDrawn(coords);
   }
 

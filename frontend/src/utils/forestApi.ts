@@ -1,3 +1,5 @@
+import { createLogger } from "./logger";
+
 const DEFAULT_BASE = import.meta.env.DEV
   ? import.meta.env.VITE_BACKEND_URL || "http://localhost:8000"
   : "https://forest-evle.onrender.com";
@@ -7,6 +9,13 @@ const BASE = (import.meta.env.VITE_API_BASE_URL || DEFAULT_BASE).replace(
 );
 const API_DEBUG =
   import.meta.env.DEV || import.meta.env.VITE_API_DEBUG === "true";
+const logger = createLogger("forestApi");
+
+logger.info("API client initialized", {
+  baseUrl: BASE,
+  debug: API_DEBUG,
+  mode: import.meta.env.MODE,
+});
 
 export interface PolygonRequest {
   polygon: [number, number][];
@@ -74,10 +83,12 @@ function logRequest(
 ): number {
   const startedAt = Date.now();
   if (API_DEBUG) {
-    console.log(
-      `[forestApi] ${method} ${toApiUrl(path)} — request started`,
-      body ?? "",
-    );
+    logger.info(`${method} request started`, {
+      path,
+      url: toApiUrl(path),
+      body: body ?? null,
+      startedAt,
+    });
   }
   return startedAt;
 }
@@ -89,7 +100,9 @@ function logSuccess(
   startedAt: number,
 ): void {
   if (API_DEBUG) {
-    console.log(`[forestApi] ${method} ${toApiUrl(path)} — success`, {
+    logger.info(`${method} request success`, {
+      path,
+      url: toApiUrl(path),
       status,
       durationMs: Date.now() - startedAt,
     });
@@ -102,7 +115,9 @@ function logWarning(
   status: number,
   startedAt: number,
 ): void {
-  console.warn(`[forestApi] ${method} ${toApiUrl(path)} — non-OK response`, {
+  logger.warn(`${method} non-OK response`, {
+    path,
+    url: toApiUrl(path),
     status,
     durationMs: Date.now() - startedAt,
   });
@@ -114,7 +129,9 @@ function logError(
   startedAt: number,
   error: unknown,
 ): void {
-  console.error(`[forestApi] ${method} ${toApiUrl(path)} — request failed`, {
+  logger.error(`${method} request failed`, {
+    path,
+    url: toApiUrl(path),
     durationMs: Date.now() - startedAt,
     error,
   });
