@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from collections.abc import Generator
 from functools import lru_cache
+import os
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from .config import get_settings
@@ -21,18 +23,40 @@ def _normalized_database_url() -> str | None:
     return database_url
 
 
+def _resolve_sslmode(database_url: str) -> str:
+    env_sslmode = (os.getenv("DATABASE_SSLMODE") or os.getenv("PGSSLMODE") or "").strip()
+    if env_sslmode:
+        return env_sslmode
+
+    try:
+        host = (make_url(database_url).host or "").strip().lower()
+    except Exception:
+        host = ""
+
+    local_hosts = {
+        "localhost",
+        "127.0.0.1",
+        "0.0.0.0",
+        "db",
+        "forest-postgis",
+        "postgres",
+    }
+    return "disable" if host in local_hosts else "require"
+
+
 @lru_cache
 def get_engine() -> Engine | None:
     database_url = _normalized_database_url()
     if not database_url:
         return None
+    sslmode = _resolve_sslmode(database_url)
     return create_engine(
         database_url,
         pool_pre_ping=True,
         pool_recycle=300,
         pool_use_lifo=True,
         connect_args={
-            "sslmode": "require",
+            "sslmode": sslmode,
             "connect_timeout": 10,
             "keepalives": 1,
             "keepalives_idle": 30,
