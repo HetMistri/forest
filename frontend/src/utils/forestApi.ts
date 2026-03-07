@@ -81,6 +81,18 @@ export interface SystemStatusResponse {
   model_status: string;
 }
 
+export interface ActionPlanRequest {
+  tree_count: number;
+  tree_density: number;
+  health_score: number;
+  risk_level: string;
+  species_distribution: Record<string, number>;
+}
+
+export interface ActionPlanResponse {
+  guidelines_markdown: string;
+}
+
 export interface PipelineStatusResponse {
   status: "processing" | "ready" | "unavailable";
   in_progress: boolean;
@@ -245,6 +257,9 @@ export const forestApi = {
 
   getHealthForecast: (polygon: [number, number][]) =>
     post<HealthForecastResponse>("/health-forecast", { polygon }),
+
+  getActionPlan: (req: ActionPlanRequest) =>
+    post<ActionPlanResponse>("/action-plan", req),
 
   // Layer endpoints
   getNDVIMap: () => get<NDVIMapResponse>("/ndvi-map"),
