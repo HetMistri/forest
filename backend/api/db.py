@@ -15,9 +15,10 @@ settings = get_settings()
 def _normalized_database_url() -> str | None:
     if not settings.database_url:
         return None
-    if settings.database_url.startswith("postgresql://"):
-        return settings.database_url.replace("postgresql://", "postgresql+psycopg://", 1)
-    return settings.database_url
+    database_url = settings.database_url.strip()
+    if database_url.startswith("postgresql://"):
+        return database_url.replace("postgresql://", "postgresql+psycopg://", 1)
+    return database_url
 
 
 @lru_cache
@@ -25,7 +26,20 @@ def get_engine() -> Engine | None:
     database_url = _normalized_database_url()
     if not database_url:
         return None
-    return create_engine(database_url, pool_pre_ping=True)
+    return create_engine(
+        database_url,
+        pool_pre_ping=True,
+        pool_recycle=300,
+        pool_use_lifo=True,
+        connect_args={
+            "sslmode": "require",
+            "connect_timeout": 10,
+            "keepalives": 1,
+            "keepalives_idle": 30,
+            "keepalives_interval": 10,
+            "keepalives_count": 5,
+        },
+    )
 
 
 def get_session_local() -> sessionmaker[Session] | None:
