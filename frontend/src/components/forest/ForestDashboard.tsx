@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { forestApi } from "../../utils/forestApi";
 import type {
   ForestMetricsResponse,
@@ -13,11 +13,13 @@ import ForestMap from "./ForestMap";
 import AnalyticsPanel from "./AnalyticsPanel";
 import KPISection from "./KPISection";
 import amnexLogo from "../../assets/image.png";
+import { createLogger } from "../../utils/logger";
 
 const PURPLE = "#401c86";
 const NAVY = "#020f50";
 const ANALYSIS_RETRY_INTERVAL_MS = 3000;
 const ANALYSIS_RETRY_WINDOW_MS = 90000;
+const logger = createLogger("ForestDashboard");
 
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -66,21 +68,53 @@ export default function ForestDashboard() {
     error: null,
   });
 
+  useEffect(() => {
+    logger.info("Dashboard mounted");
+    return () => {
+      logger.info("Dashboard unmounted");
+    };
+  }, []);
+
   const handlePolygon = useCallback(async (coords: [number, number][]) => {
+    const analysisStartedAt = Date.now();
+    logger.info("Polygon analysis started", {
+      vertexCount: coords.length,
+      polygon: coords,
+    });
+
     setState((s) => ({ ...s, loading: true, error: null, polygon: coords }));
     try {
       const startedAt = Date.now();
       let lastRetryableError: unknown = null;
       let metrics: ForestMetricsResponse | null = null;
+      let attempt = 0;
       while (Date.now() - startedAt < ANALYSIS_RETRY_WINDOW_MS) {
+        attempt += 1;
+        logger.info("Requesting forest metrics", {
+          attempt,
+          elapsedMs: Date.now() - startedAt,
+        });
         try {
           metrics = await forestApi.getForestMetrics(coords);
+          logger.info("Forest metrics received", {
+            attempt,
+            areaKm2: metrics.area_km2,
+            treeCount: metrics.tree_count,
+            healthScore: metrics.health_score,
+            riskLevel: metrics.risk_level,
+          });
           break;
         } catch (error) {
           if (!isRetryableAnalysisError(error)) {
+            logger.error("Non-retryable metrics error", { attempt, error });
             throw error;
           }
           lastRetryableError = error;
+          logger.warn("Retryable metrics error; retry scheduled", {
+            attempt,
+            retryInMs: ANALYSIS_RETRY_INTERVAL_MS,
+            error,
+          });
           await wait(ANALYSIS_RETRY_INTERVAL_MS);
         }
       }
@@ -94,6 +128,17 @@ export default function ForestDashboard() {
         );
       }
 
+      logger.info("Fetching secondary analytics in parallel", {
+        endpoints: [
+          "/health-forecast",
+          "/risk-alerts",
+          "/health-score",
+          "/tree-density",
+          "/species-composition",
+          "/system-status",
+        ],
+      });
+
       const [f, r, hs, td, sp, sys] = await Promise.all([
         forestApi.getHealthForecast(coords),
         forestApi.getRiskAlerts(coords),
@@ -102,6 +147,14 @@ export default function ForestDashboard() {
         forestApi.getSpeciesComposition(coords),
         forestApi.getSystemStatus(),
       ]);
+
+      logger.info("Secondary analytics received", {
+        forecastPoints: f.forecast.length,
+        alertCount: r.alerts.length,
+        treeDensity: td.tree_density,
+        speciesCount: Object.keys(sp).length,
+        modelStatus: sys.model_status,
+      });
 
       setState((s) => ({
         ...s,
@@ -115,11 +168,22 @@ export default function ForestDashboard() {
         loading: false,
         error: null,
       }));
+
+      logger.info("Polygon analysis completed", {
+        durationMs: Date.now() - analysisStartedAt,
+      });
     } catch (error) {
       const msg =
         error instanceof Error
           ? error.message
           : "Analysis failed. Backend may be offline.";
+
+      logger.error("Polygon analysis failed", {
+        durationMs: Date.now() - analysisStartedAt,
+        message: msg,
+        error,
+      });
+
       setState((s) => ({
         ...s,
         loading: false,
