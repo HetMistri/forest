@@ -4,7 +4,7 @@ import json
 import logging
 import math
 import os
-from threading import Lock, Thread
+from threading import Event, Lock, Thread
 from datetime import datetime, timedelta, timezone
 from hashlib import sha1
 from typing import Any
@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 class ForestMetricsService:
     _pipeline_runs_in_progress: set[str] = set()
+    _pipeline_completion_events: dict[str, Event] = {}
     _pipeline_runs_lock = Lock()
 
     def __init__(self) -> None:
@@ -47,6 +48,9 @@ class ForestMetricsService:
             os.getenv("REGION_PIPELINE_TRIGGER_ON_REQUEST", "true").lower() == "true"
         )
         self.pipeline_async = os.getenv("REGION_PIPELINE_ASYNC", "true").lower() == "true"
+        self.pipeline_wait_for_completion = (
+            os.getenv("REGION_PIPELINE_WAIT_FOR_COMPLETION", "true").lower() == "true"
+        )
 
     def _strict_unavailable(self, endpoint: str, detail: str) -> None:
         logger.error("%s unavailable in strict mode: %s", endpoint, detail)
@@ -62,13 +66,29 @@ class ForestMetricsService:
         finally:
             with self._pipeline_runs_lock:
                 self._pipeline_runs_in_progress.discard(polygon_fp)
+                event = self._pipeline_completion_events.pop(polygon_fp, None)
 
-    def _launch_pipeline_background(self, polygon: list[list[float]], polygon_fp: str) -> None:
+            if event is not None:
+                event.set()
+
+    def _launch_pipeline_background(self, polygon: list[list[float]], polygon_fp: str) -> Event:
+        should_start_thread = False
         with self._pipeline_runs_lock:
+            event = self._pipeline_completion_events.get(polygon_fp)
+            if event is None:
+                event = Event()
+                self._pipeline_completion_events[polygon_fp] = event
+
             if polygon_fp in self._pipeline_runs_in_progress:
                 logger.info("Region pipeline already in progress; skipping duplicate trigger (polygon=%s)", polygon_fp)
-                return
+                return event
+
+            event.clear()
             self._pipeline_runs_in_progress.add(polygon_fp)
+            should_start_thread = True
+
+        if not should_start_thread:
+            return event
 
         thread = Thread(
             target=self._pipeline_worker,
@@ -78,6 +98,19 @@ class ForestMetricsService:
         )
         thread.start()
         logger.info("Region pipeline launched in background (polygon=%s, thread=%s)", polygon_fp, thread.name)
+        return event
+
+    def _wait_for_pipeline_completion(self, polygon_fp: str) -> None:
+        with self._pipeline_runs_lock:
+            event = self._pipeline_completion_events.get(polygon_fp)
+            in_progress = polygon_fp in self._pipeline_runs_in_progress
+
+        if not in_progress or event is None:
+            return
+
+        logger.info("Waiting for region pipeline completion (polygon=%s)", polygon_fp)
+        event.wait()
+        logger.info("Region pipeline completion wait finished (polygon=%s)", polygon_fp)
 
     def _prepare_region_data(self, polygon: list[list[float]]) -> None:
         if not self.trigger_pipeline_on_request:
@@ -88,6 +121,8 @@ class ForestMetricsService:
             if self.pipeline_async:
                 logger.info("Region pipeline trigger enabled; launching async run for polygon=%s", polygon_fp)
                 self._launch_pipeline_background(polygon, polygon_fp)
+                if self.pipeline_wait_for_completion:
+                    self._wait_for_pipeline_completion(polygon_fp)
                 return
 
             logger.info("Region pipeline trigger enabled; running synchronously for polygon=%s", polygon_fp)
@@ -220,7 +255,8 @@ class ForestMetricsService:
 
     def get_pipeline_status(self, polygon: list[list[float]]) -> PipelineStatusResponse:
         polygon_fp = self._polygon_fingerprint(polygon)
-        in_progress = polygon_fp in self._pipeline_runs_in_progress
+        with self._pipeline_runs_lock:
+            in_progress = polygon_fp in self._pipeline_runs_in_progress
 
         has_feature_data = self._has_feature_data(polygon)
         if not has_feature_data and self.demo_cache_enabled:
