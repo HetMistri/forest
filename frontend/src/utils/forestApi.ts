@@ -1,6 +1,6 @@
 const DEFAULT_BASE = import.meta.env.DEV
   ? import.meta.env.VITE_BACKEND_URL || "http://localhost:8000"
-  : "/api";
+  : "https://forest-evle.onrender.com";
 const BASE = (import.meta.env.VITE_API_BASE_URL || DEFAULT_BASE).replace(
   /\/$/,
   "",
