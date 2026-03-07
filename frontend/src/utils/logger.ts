@@ -1,7 +1,6 @@
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
-const SHOULD_LOG =
-  import.meta.env.DEV || import.meta.env.VITE_FRONTEND_DEBUG === "true";
+const SHOULD_LOG = import.meta.env.VITE_FRONTEND_DEBUG !== "false";
 
 function isoTimestamp(): string {
   return new Date().toISOString();
