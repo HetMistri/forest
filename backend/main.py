@@ -1,4 +1,5 @@
 from api.config import get_settings
+from api.main import app
 
 
 def main() -> None:
@@ -11,7 +12,6 @@ def main() -> None:
         port=settings.app_port,
         reload=settings.app_env == "development",
     )
-
 
 if __name__ == "__main__":
     main()
