@@ -135,10 +135,13 @@ export default function ForestDashboard() {
 
             lastRetryableError = error;
             shouldPollPipelineStatus = true;
-            logger.warn("Retryable metrics error; switching to pipeline polling", {
-              attempt,
-              error,
-            });
+            logger.warn(
+              "Retryable metrics error; switching to pipeline polling",
+              {
+                attempt,
+                error,
+              },
+            );
           }
         }
 
@@ -185,10 +188,13 @@ export default function ForestDashboard() {
             });
           }
         } else {
-          logger.info("Pipeline still processing; metrics request skipped this cycle", {
-            attempt,
-            elapsedMs: Date.now() - startedAt,
-          });
+          logger.info(
+            "Pipeline still processing; metrics request skipped this cycle",
+            {
+              attempt,
+              elapsedMs: Date.now() - startedAt,
+            },
+          );
         }
 
         await wait(ANALYSIS_RETRY_INTERVAL_MS);
